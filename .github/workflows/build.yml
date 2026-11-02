@@ -1,0 +1,37 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Build app
+        run: |
+          set -o pipefail
+          xcodebuild -project FFmpui.xcodeproj -target FFmpui -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log
+          echo "---- warnings ----"
+          grep -E "(warning|error):" build.log | sort -u || echo "No warnings or errors"
+
+      - name: Check script bundled
+        run: |
+          ls build/Debug/FFmpui.app/Contents/Resources/
+          test -f build/Debug/FFmpui.app/Contents/Resources/compress_video.sh
+
+      - name: ShellCheck
+        run: |
+          brew install shellcheck
+          shellcheck FFmpui/compress_video.sh
