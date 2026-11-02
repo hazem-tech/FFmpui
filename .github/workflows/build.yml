@@ -33,7 +33,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project FFmpui.xcodeproj -target FFmpui -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log
+            CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=NO build 2>&1 | tee build.log
           echo "---- warnings ----"
           grep -E "(warning|error):" build.log | sort -u || echo "No warnings or errors"
 
