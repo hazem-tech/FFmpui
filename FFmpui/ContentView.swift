@@ -45,6 +45,15 @@ struct ContentView: View {
                      : "Originals are kept. Compressed videos are saved next to them as “name_copy”.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Toggle("High priority", isOn: $compressor.highPriority)
+                    .disabled(compressor.isRunning)
+                    .padding(.top, 6)
+                Text(compressor.highPriority
+                     ? "Compresses as fast as running the script in Terminal."
+                     : "Lets other apps go first, so your Mac stays more responsive. Compressing may take longer.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if !compressor.log.isEmpty {

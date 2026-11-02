@@ -38,6 +38,9 @@ final class VideoCompressor {
 
     var items: [VideoItem] = []
     var replaceOriginals = false
+    /// On: encode at the same high priority as a command typed in Terminal,
+    /// even when the app is in the background. Off: let other apps go first.
+    var highPriority = true
     private(set) var isRunning = false
     private(set) var log: [String] = []
     private(set) var missingTools: [String] = []
@@ -204,6 +207,7 @@ final class VideoCompressor {
         process.standardOutput = pipe
         process.standardError = pipe
         process.standardInput = FileHandle.nullDevice
+        process.qualityOfService = highPriority ? .userInitiated : .utility
 
         do {
             try process.run()
