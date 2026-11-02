@@ -10,8 +10,9 @@ import SwiftUI
 @main
 struct FFmpuiApp: App {
     var body: some Scene {
-        WindowGroup {
+        Window("FFmpui", id: "main") {
             ContentView()
         }
+        .defaultSize(width: 640, height: 600)
     }
 }
