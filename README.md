@@ -1,7 +1,5 @@
 # FFmpui
 
-**An unofficial, simple macOS UI for FFmpeg, with extra features on top.**
-
 > FFmpui is not affiliated with, endorsed by, or part of the official [FFmpeg](https://ffmpeg.org) project.
 > It's a small, independent app that uses FFmpeg (and ExifTool) under the hood.
 
