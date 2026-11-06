@@ -45,10 +45,6 @@ final class VideoCompressor {
     private(set) var log: [String] = []
     private(set) var missingTools: [String] = []
 
-    /// The App Sandbox blocks launching Homebrew's ffmpeg/exiftool and writing
-    /// next to the original videos, so the app must run without it.
-    let isSandboxed = ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] != nil
-
     private var currentProcess: Process?
     private var stopRequested = false
 
@@ -67,7 +63,7 @@ final class VideoCompressor {
         }.count
     }
 
-    var canStart: Bool { !isRunning && pendingCount > 0 && missingTools.isEmpty && !isSandboxed }
+    var canStart: Bool { !isRunning && pendingCount > 0 && missingTools.isEmpty }
 
     /// Adds files and/or folders. Folders are searched recursively for videos.
     func add(urls: [URL]) {

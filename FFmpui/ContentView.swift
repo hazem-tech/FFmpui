@@ -16,10 +16,6 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 14) {
             header
 
-            if compressor.isSandboxed {
-                SandboxBanner()
-            }
-
             if !compressor.missingTools.isEmpty {
                 MissingToolsBanner(missing: compressor.missingTools) {
                     compressor.refreshToolCheck()
@@ -315,27 +311,6 @@ private struct MissingToolsBanner: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-    }
-}
-
-// MARK: - Sandbox
-
-private struct SandboxBanner: View {
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "lock.fill")
-                .foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("App Sandbox is on")
-                    .font(.headline)
-                Text("FFmpui needs to run ffmpeg and exiftool and write next to your videos. In Xcode, open the FFmpui target → Signing & Capabilities and remove “App Sandbox”, then run again.")
-                    .font(.callout)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
