@@ -31,6 +31,22 @@ FFmpui compresses your videos to HEVC (H.265) with Apple's hardware encoder. Unl
 
 - The app must run **without the App Sandbox**, because it launches `ffmpeg`/`exiftool` and writes next to your videos. In Xcode, open the FFmpui target, go to **Signing & Capabilities** and remove **App Sandbox**. If the sandbox is still on, the app tells you.
 
+## Comparing encoders (AVFoundation test)
+
+An iOS app can't run `ffmpeg` or `exiftool`, so an iOS version would encode with Apple's AVFoundation instead. It uses the same VideoToolbox HEVC hardware encoder that ffmpeg's `hevc_videotoolbox` wraps. To check that it gives the same small files and the same quality, the Mac app has an **Encoder** switch:
+
+- **ffmpeg** (default): the normal path, unchanged.
+- **AVFoundation (test)**: encodes with AVFoundation ([`VideoTranscoder.swift`](FFmpui/VideoTranscoder.swift)), then runs the same check, metadata copy and file-date steps of the script (`compress_video.sh --encoded`). Kept copies are named `name_copy_avf.ext`, so they sit next to ffmpeg's `name_copy.ext`.
+
+Run both on the same clips. Each finished file adds a line to **Details** with its size and video bitrate. To measure quality, compare each result with the original using ffmpeg's built-in SSIM filter (closer to 1.0 = closer to the original):
+
+```bash
+ffmpeg -i clip_copy.MOV     -i clip.MOV -lavfi "[0:v][1:v]ssim" -f null - 2>&1 | grep SSIM
+ffmpeg -i clip_copy_avf.MOV -i clip.MOV -lavfi "[0:v][1:v]ssim" -f null - 2>&1 | grep SSIM
+```
+
+Known difference: AVFoundation may not be able to copy some data tracks, such as GoPro/DJI telemetry. When that happens it retries with video and audio only, like the script does, and notes it in Details.
+
 ## Command line
 
 The engine is a plain shell script, [`FFmpui/compress_video.sh`](FFmpui/compress_video.sh), which also works on its own:

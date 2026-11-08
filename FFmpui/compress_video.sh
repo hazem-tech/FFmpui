@@ -26,10 +26,18 @@
 #   --bitrate <value>     Video bitrate passed to ffmpeg (default: 1, same as
 #                         the original only_bit.sh script).
 #   --encoder <name>      Video encoder (default: hevc_videotoolbox).
+#   --suffix <text>       Name ending for the kept-originals output
+#                         (default: _copy, giving "<name>_copy.<ext>").
+#   --encoded <file>      Skip the ffmpeg step: <file> was already encoded
+#                         (e.g. by the app's AVFoundation encoder) from the
+#                         single input given. It is checked, gets all the
+#                         metadata / file attributes, and is moved into place
+#                         (it is deleted if anything fails).
 #   -h, --help            Show this help.
 #
 # Folders are searched recursively for .mp4 / .mov / .m4v files.
-# Files that already end in "_copy" are skipped when scanning a folder.
+# Files that already end in "_copy" or "_copy_avf" are skipped when scanning
+# a folder.
 #
 # Requires: ffmpeg, ffprobe, exiftool (brew install ffmpeg exiftool)
 #
@@ -50,6 +58,8 @@ REPLACE=0
 USE_RECORDING_DATE=0
 BITRATE="1"
 ENCODER="hevc_videotoolbox"
+SUFFIX="_copy"
+ENCODED=""
 INPUTS=()
 
 usage() { sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; }
@@ -60,6 +70,8 @@ while [ $# -gt 0 ]; do
     --use-recording-date) USE_RECORDING_DATE=1 ;;
     --bitrate) shift; BITRATE="${1:?--bitrate needs a value}" ;;
     --encoder) shift; ENCODER="${1:?--encoder needs a value}" ;;
+    --suffix) shift; SUFFIX="${1:?--suffix needs a value}" ;;
+    --encoded) shift; ENCODED="${1:?--encoded needs a file}" ;;
     -h|--help) usage; exit 0 ;;
     --) shift; INPUTS+=("$@"); break ;;
     -*) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -73,8 +85,22 @@ if [ ${#INPUTS[@]} -eq 0 ]; then
   exit 2
 fi
 
+if [ -n "$ENCODED" ]; then
+  if [ ${#INPUTS[@]} -ne 1 ] || [ ! -f "${INPUTS[0]}" ]; then
+    echo "--encoded needs exactly one input file" >&2
+    rm -f "$ENCODED"
+    exit 2
+  fi
+  if [ ! -f "$ENCODED" ]; then
+    echo "@@FILE_START ${INPUTS[0]}"
+    echo "@@FILE_FAIL Encoded file not found"
+    exit 1
+  fi
+fi
+
 for tool in ffmpeg ffprobe exiftool; do
   if ! command -v "$tool" >/dev/null 2>&1; then
+    [ -n "$ENCODED" ] && rm -f "$ENCODED"
     echo "@@FILE_FAIL Missing '$tool'. Install it with: brew install ffmpeg exiftool"
     echo "Error: '$tool' not found. Install it with: brew install ffmpeg exiftool" >&2
     exit 3
@@ -87,6 +113,9 @@ FFMPEG_PID=""
 cleanup() {
   [ -n "$FFMPEG_PID" ] && kill "$FFMPEG_PID" 2>/dev/null
   [ -n "$CURRENT_TMP" ] && rm -f "$CURRENT_TMP"
+  # An --encoded file is gone once it was moved into place; anything left over
+  # is a failed or stopped run.
+  [ -n "$ENCODED" ] && rm -f "$ENCODED"
 }
 trap cleanup EXIT
 trap 'echo "Stopped." >&2; exit 143' INT TERM
@@ -236,8 +265,11 @@ process_file() {
     final="$src"
     work="$dir/.${name}.ffmpui-tmp.${ext}"
   else
-    final="$dir/${name}_copy.${ext}"
-    work="$dir/.${name}_copy.ffmpui-tmp.${ext}"
+    final="$dir/${name}${SUFFIX}.${ext}"
+    work="$dir/.${name}${SUFFIX}.ffmpui-tmp.${ext}"
+  fi
+  if [ -n "$ENCODED" ]; then
+    work="$ENCODED"
   fi
   CURRENT_TMP="$work"
 
@@ -245,8 +277,8 @@ process_file() {
   duration=$(probe_duration "$src")
   [ -n "$duration" ] && echo "@@DURATION $duration"
 
-  # 1. Compress
-  if ! encode "$src" "$work"; then
+  # 1. Compress (unless the app already did it)
+  if [ -z "$ENCODED" ] && ! encode "$src" "$work"; then
     rm -f "$work"; CURRENT_TMP=""
     echo "@@FILE_FAIL ffmpeg could not encode this file"
     return 1
@@ -295,7 +327,7 @@ for input in "${INPUTS[@]}"; do
       b=$(basename "$f")
       case "$b" in .*) continue ;; esac
       n="${b%.*}"
-      case "$n" in *_copy) continue ;; esac
+      case "$n" in *_copy|*_copy_avf) continue ;; esac
       is_video "$f" && FILES+=("$f")
     done < <(find "$input" -type f -print0 | sort -z)
   elif [ -f "$input" ]; then

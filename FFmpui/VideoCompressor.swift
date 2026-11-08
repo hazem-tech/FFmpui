@@ -6,6 +6,7 @@
 //  track of progress so the UI can show it.
 //
 
+import AVFoundation
 import Foundation
 import Observation
 
@@ -29,7 +30,20 @@ struct VideoItem: Identifiable, Equatable {
 
 @Observable
 final class VideoCompressor {
+    enum Encoder {
+        /// ffmpeg's hevc_videotoolbox, run by compress_video.sh.
+        case ffmpeg
+        /// AVFoundation (VideoTranscoder.swift), then the script's metadata step.
+        case avfoundation
+    }
+
     static let videoExtensions: Set<String> = ["mp4", "mov", "m4v"]
+    /// Name ending of AVFoundation results, so they can sit next to
+    /// ffmpeg's "_copy" files for comparison.
+    static let avfoundationSuffix = "_copy_avf"
+    /// Same as the script's default `--bitrate 1`: ask VideoToolbox for the
+    /// lowest bitrate and let it pick its own floor.
+    static let avfoundationBitrate = 1
 
     /// Folders where Homebrew / MacPorts install command line tools.
     /// GUI apps don't get the shell's PATH, so we look in these explicitly.
@@ -41,11 +55,13 @@ final class VideoCompressor {
     /// On: encode at the same high priority as a command typed in Terminal,
     /// even when the app is in the background. Off: let other apps go first.
     var highPriority = true
+    var encoder: Encoder = .ffmpeg
     private(set) var isRunning = false
     private(set) var log: [String] = []
     private(set) var missingTools: [String] = []
 
     private var currentProcess: Process?
+    private var currentEncode: Task<Void, Error>?
     private var stopRequested = false
 
     init() {
@@ -111,7 +127,8 @@ final class VideoCompressor {
         for case let file as URL in enumerator {
             guard isVideo(file) else { continue }
             // Skip results of a previous run.
-            if file.deletingPathExtension().lastPathComponent.hasSuffix("_copy") { continue }
+            let name = file.deletingPathExtension().lastPathComponent
+            if name.hasSuffix("_copy") || name.hasSuffix(avfoundationSuffix) { continue }
             if (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
                 found.append(file)
             }
@@ -138,6 +155,7 @@ final class VideoCompressor {
 
     func stop() {
         stopRequested = true
+        currentEncode?.cancel()
         currentProcess?.terminate()
     }
 
@@ -194,11 +212,71 @@ final class VideoCompressor {
         }
         appendLog("▶︎ \(item.url.path)")
 
+        var arguments = replaceOriginals ? ["--replace"] : []
+        if encoder == .avfoundation {
+            // Encode here, then let the script check the result, copy the
+            // metadata / file attributes and move it into place.
+            guard let encoded = await encodeWithAVFoundation(item) else { return }
+            arguments += ["--encoded", encoded.path, "--suffix", Self.avfoundationSuffix]
+        }
+
+        await runScript(script, arguments: arguments + ["--", item.url.path], for: id)
+
+        if let output = items.first(where: { $0.id == id })?.outputURL,
+           items.first(where: { $0.id == id })?.status == .done {
+            await logResult(output)
+        }
+    }
+
+    /// Runs VideoTranscoder into the same hidden temp file name the script
+    /// would use. Returns nil (with the item's status set) on failure or Stop.
+    private func encodeWithAVFoundation(_ item: VideoItem) async -> URL? {
+        let id = item.id
+        let source = item.url
+        let name = source.deletingPathExtension().lastPathComponent
+        let ext = source.pathExtension
+        let tempName = replaceOriginals
+            ? ".\(name).ffmpui-tmp.\(ext)"
+            : ".\(name)\(Self.avfoundationSuffix).ffmpui-tmp.\(ext)"
+        let destination = source.deletingLastPathComponent().appendingPathComponent(tempName)
+
+        let task = Task(priority: highPriority ? .userInitiated : .utility) {
+            try await VideoTranscoder.transcode(
+                source: source,
+                destination: destination,
+                bitrate: Self.avfoundationBitrate,
+                log: { line in Task { @MainActor in self.appendLog(line) } },
+                progress: { value in Task { @MainActor in self.update(id) { $0.progress = value } } }
+            )
+        }
+        currentEncode = task
+        defer { currentEncode = nil }
+
+        do {
+            try await task.value
+            return destination
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            if stopRequested {
+                update(id) {
+                    $0.status = .waiting
+                    $0.progress = 0
+                }
+                appendLog("■ Stopped")
+            } else {
+                update(id) { $0.status = .failed("AVFoundation could not encode this file: \(error.localizedDescription)") }
+                appendLog("AVFoundation error: \(error.localizedDescription)")
+            }
+            return nil
+        }
+    }
+
+    /// Runs compress_video.sh for one file and turns its output into status,
+    /// progress and log lines.
+    private func runScript(_ script: URL, arguments: [String], for id: UUID) async {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = [script.path]
-            + (replaceOriginals ? ["--replace"] : [])
-            + ["--", item.url.path]
+        process.arguments = [script.path] + arguments
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -271,6 +349,21 @@ final class VideoCompressor {
             $0.status = finalStatus
             if finalStatus == .done { $0.progress = 1 }
         }
+    }
+
+    /// One line per finished file to compare the two encoders:
+    /// encoder, file size and the video track's average bitrate.
+    private func logResult(_ output: URL) async {
+        let size = (try? output.resourceValues(forKeys: [.fileSizeKey]).fileSize).map {
+            Int64($0).formatted(.byteCount(style: .file))
+        } ?? "?"
+        var bitrate = "?"
+        if let track = try? await AVURLAsset(url: output).loadTracks(withMediaType: .video).first,
+           let rate = try? await track.load(.estimatedDataRate), rate > 0 {
+            bitrate = String(format: "%.2f Mbit/s", Double(rate) / 1_000_000)
+        }
+        let label = encoder == .avfoundation ? "AVFoundation" : "ffmpeg"
+        appendLog("✔︎ \(label): \(output.lastPathComponent) · \(size) · video \(bitrate)")
     }
 
     /// ffmpeg's `-progress` output is a series of `key=value` lines.
