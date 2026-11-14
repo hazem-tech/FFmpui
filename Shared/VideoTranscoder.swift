@@ -11,9 +11,9 @@
 //    • timecode / metadata / telemetry / subtitle tracks copied when the
 //      container accepts them, otherwise a second try with video + audio only
 //
-//  Camera / lens / GPS tags and file dates are added afterwards by the
-//  script's ExifTool step (`compress_video.sh --encoded`), exactly as for
-//  the ffmpeg encoder. No AppKit/UIKit here, so iOS can reuse this file.
+//  The original's metadata is copied afterwards: on the Mac by the script's
+//  ExifTool step (`compress_video.sh --encoded`), exactly as for the ffmpeg
+//  encoder; on iOS by MetadataCopier. Shared by both apps.
 //
 
 import AVFoundation
@@ -38,6 +38,10 @@ nonisolated enum VideoTranscoder {
             }
         }
     }
+
+    /// Same as the script's default `--bitrate 1`: ask VideoToolbox for the
+    /// lowest bitrate and let it pick its own floor. Used by both apps.
+    static let defaultBitrate = 1
 
     /// Container of the output, chosen by the file extension (like ffmpeg).
     static func fileType(for url: URL) -> AVFileType {
@@ -316,14 +320,49 @@ nonisolated enum VideoTranscoder {
         if let extendedLanguage { input.extendedLanguageTag = extendedLanguage }
     }
 
-    /// Movie-level tags the container can hold. ExifTool copies everything
-    /// afterwards anyway; this is just a baseline.
+    /// Movie-level tags the container can hold. Afterwards ExifTool (Mac) or
+    /// MetadataCopier (iOS) copies the original's metadata boxes as well;
+    /// this is the baseline, plus the mirrored Apple Keys below.
     private static func containerMetadata(of asset: AVURLAsset, for fileType: AVFileType) async throws -> [AVMetadataItem] {
         let keySpaces: Set<AVMetadataKeySpace> = fileType == .mov
             ? [.quickTimeMetadata, .quickTimeUserData]
             : [.iTunes, .isoUserData]
-        return try await asset.load(.metadata).filter { item in
+        let items = try await asset.load(.metadata)
+        var result = items.filter { item in
             item.keySpace.map(keySpaces.contains) ?? false
         }
+        if fileType == .mov {
+            result += try await mirroredKeys(of: asset, existing: items)
+        }
+        return result
+    }
+
+    /// Many cameras store make / model / software / date / GPS only as
+    /// QuickTime UserData or iTunes tags. Photos and Finder read Apple Keys
+    /// first, so add Keys for whatever the original has elsewhere but not
+    /// as Keys (the same idea as the script's '-Keys:Make<Make' mirroring).
+    private static func mirroredKeys(of asset: AVURLAsset, existing: [AVMetadataItem]) async throws -> [AVMetadataItem] {
+        let mirrors: [(AVMetadataKey, AVMetadataIdentifier)] = [
+            (.commonKeyMake, .quickTimeMetadataMake),
+            (.commonKeyModel, .quickTimeMetadataModel),
+            (.commonKeySoftware, .quickTimeMetadataSoftware),
+            (.commonKeyCreationDate, .quickTimeMetadataCreationDate),
+            (.commonKeyLocation, .quickTimeMetadataLocationISO6709),
+        ]
+        let existingKeys = Set(existing.filter { $0.keySpace == .quickTimeMetadata }.compactMap(\.identifier))
+        let common = try await asset.load(.commonMetadata)
+
+        var mirrored: [AVMetadataItem] = []
+        for (commonKey, identifier) in mirrors where !existingKeys.contains(identifier) {
+            guard let item = common.first(where: { $0.commonKey == commonKey && $0.keySpace != .quickTimeMetadata }),
+                  let value = try await item.load(.stringValue), !value.isEmpty
+            else { continue }
+            let key = AVMutableMetadataItem()
+            key.identifier = identifier
+            key.value = value as NSString
+            key.dataType = kCMMetadataBaseDataType_UTF8 as String
+            mirrored.append(key)
+        }
+        return mirrored
     }
 }

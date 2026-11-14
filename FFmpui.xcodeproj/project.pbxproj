@@ -8,6 +8,7 @@
 
 /* Begin PBXFileReference section */
 		A15E34263098A24B00AD3B90 /* FFmpui.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FFmpui.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B1F000000000000000000001 /* FFmpui-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "FFmpui-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -16,10 +17,25 @@
 			path = FFmpui;
 			sourceTree = "<group>";
 		};
+		B1F000000000000000000002 /* FFmpui-iOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "FFmpui-iOS";
+			sourceTree = "<group>";
+		};
+		B1F000000000000000000003 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A15E34233098A24B00AD3B90 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
+		B1F000000000000000000005 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
 			);
@@ -31,6 +47,8 @@
 			isa = PBXGroup;
 			children = (
 				A15E34283098A24B00AD3B90 /* FFmpui */,
+				B1F000000000000000000002 /* FFmpui-iOS */,
+				B1F000000000000000000003 /* Shared */,
 				A15E34273098A24B00AD3B90 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -39,6 +57,7 @@
 			isa = PBXGroup;
 			children = (
 				A15E34263098A24B00AD3B90 /* FFmpui.app */,
+				B1F000000000000000000001 /* FFmpui-iOS.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -58,10 +77,30 @@
 			);
 			fileSystemSynchronizedGroups = (
 				A15E34283098A24B00AD3B90 /* FFmpui */,
+				B1F000000000000000000003 /* Shared */,
 			);
 			name = FFmpui;
 			productName = FFmpui;
 			productReference = A15E34263098A24B00AD3B90 /* FFmpui.app */;
+			productType = "com.apple.product-type.application";
+		};
+		B1F000000000000000000007 /* FFmpui-iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B1F000000000000000000008 /* Build configuration list for PBXNativeTarget "FFmpui-iOS" */;
+			buildPhases = (
+				B1F000000000000000000004 /* Sources */,
+				B1F000000000000000000005 /* Frameworks */,
+				B1F000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			fileSystemSynchronizedGroups = (
+				B1F000000000000000000002 /* FFmpui-iOS */,
+				B1F000000000000000000003 /* Shared */,
+			);
+			name = "FFmpui-iOS";
+			productName = "FFmpui-iOS";
+			productReference = B1F000000000000000000001 /* FFmpui-iOS.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -75,6 +114,9 @@
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					A15E34253098A24B00AD3B90 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					B1F000000000000000000007 = {
 						CreatedOnToolsVersion = 27.0;
 					};
 				};
@@ -94,6 +136,7 @@
 			projectRoot = "";
 			targets = (
 				A15E34253098A24B00AD3B90 /* FFmpui */,
+				B1F000000000000000000007 /* FFmpui-iOS */,
 			);
 		};
 /* End PBXProject section */
@@ -104,10 +147,20 @@
 			files = (
 			);
 		};
+		B1F000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		A15E34223098A24B00AD3B90 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
+		B1F000000000000000000004 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
 			);
@@ -323,6 +376,91 @@
 			};
 			name = Release;
 		};
+		B1F000000000000000000009 /* Debug configuration for PBXNativeTarget "FFmpui-iOS" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CL4CTC5AZQ;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/FFmpui-iOS-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = FFmpui;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "FFmpui saves the compressed videos to your library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "FFmpui reads each video's original file to compress it, saves the compressed copy with the same date, location and camera details, and moves originals to Recently Deleted when you choose Replace.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ht.FFmpui.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B1F00000000000000000000A /* Release configuration for PBXNativeTarget "FFmpui-iOS" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CL4CTC5AZQ;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/FFmpui-iOS-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = FFmpui;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "FFmpui saves the compressed videos to your library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "FFmpui reads each video's original file to compress it, saves the compressed copy with the same date, location and camera details, and moves originals to Recently Deleted when you choose Replace.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = ht.FFmpui.ios;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -339,6 +477,14 @@
 			buildConfigurations = (
 				A15E34323098A24E00AD3B90 /* Debug configuration for PBXNativeTarget "FFmpui" */,
 				A15E34333098A24E00AD3B90 /* Release configuration for PBXNativeTarget "FFmpui" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		B1F000000000000000000008 /* Build configuration list for PBXNativeTarget "FFmpui-iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B1F000000000000000000009 /* Debug configuration for PBXNativeTarget "FFmpui-iOS" */,
+				B1F00000000000000000000A /* Release configuration for PBXNativeTarget "FFmpui-iOS" */,
 			);
 			defaultConfigurationName = Release;
 		};

@@ -41,9 +41,7 @@ final class VideoCompressor {
     /// Name ending of AVFoundation results, so they can sit next to
     /// ffmpeg's "_copy" files for comparison.
     static let avfoundationSuffix = "_copy_avf"
-    /// Same as the script's default `--bitrate 1`: ask VideoToolbox for the
-    /// lowest bitrate and let it pick its own floor.
-    static let avfoundationBitrate = 1
+    static let avfoundationBitrate = VideoTranscoder.defaultBitrate
 
     /// Folders where Homebrew / MacPorts install command line tools.
     /// GUI apps don't get the shell's PATH, so we look in these explicitly.

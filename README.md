@@ -47,6 +47,22 @@ ffmpeg -i clip_copy_avf.MOV -i clip.MOV -lavfi "[0:v][1:v]ssim" -f null - 2>&1 |
 
 Known difference: AVFoundation may not be able to copy some data tracks, such as GoPro/DJI telemetry. When that happens it retries with video and audio only, like the script does, and notes it in Details.
 
+## iOS app
+
+The `FFmpui-iOS` target compresses videos from your **Photos library** on iPhone and iPad (iOS 26 or later). It uses the same AVFoundation encoder and settings as the Mac's AVFoundation option ([`Shared/VideoTranscoder.swift`](Shared/VideoTranscoder.swift)), so sizes and quality match.
+
+- **Add Videos**, then **Start**. Each compressed video is added to your library as `name_copy`, next to the original.
+- **Replace originals:** the compressed video is saved first. When the run ends, iOS asks once to delete the originals, which stay in **Recently Deleted** for 30 days. A video edited in Photos is skipped in this mode, so an edit is never thrown away.
+- **Metadata:** iOS can't run ExifTool, so [`Shared/MetadataCopier.swift`](Shared/MetadataCopier.swift) copies the original file's metadata boxes into the new file byte for byte:
+  - Apple Keys (creation date with time zone, GPS, make/model/software, lens, focal length, Live Photo ID)
+  - UserData, XMP and iTunes tags
+  - camera maker blocks (Canon, Sony, GoPro, DJI, …)
+  - every QuickTime movie/track/media create and modify date
+
+  In Photos, the new video gets the original's date, location, favorite and hidden state, and its albums. Make/model/GPS stored only as UserData are also copied into Apple Keys, so Photos shows them. (Photos' own "date modified" is set by iOS and can't be changed by any app.)
+- It keeps running in the background, with progress shown by iOS, and the screen stays on while the app is open.
+- It needs **full** Photos access, and enough free space for a temporary copy of the original plus the compressed file.
+
 ## Command line
 
 The engine is a plain shell script, [`FFmpui/compress_video.sh`](FFmpui/compress_video.sh), which also works on its own:
