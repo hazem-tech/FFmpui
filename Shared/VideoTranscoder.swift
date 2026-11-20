@@ -61,7 +61,7 @@ nonisolated enum VideoTranscoder {
         /// it can't spend bits the lowest bitrate doesn't ask for.
         var minFrameQP: Int?
         /// Let the encoder vary the quantizer within a frame (detail vs. flat
-        /// areas). Off saves bits when quality doesn't matter.
+        /// areas). Off saves bits when quality doesn't matter. (Mac only.)
         var adaptiveQP = true
 
         /// Both apps' "Size + Speed" mode.
@@ -402,10 +402,12 @@ nonisolated enum VideoTranscoder {
         if let qp = settings.minFrameQP {
             hints.append((kVTCompressionPropertyKey_MinAllowedFrameQP as String, qp, "QP ≥ \(qp)"))
         }
+        #if os(macOS)  // not available on iOS
         if !settings.adaptiveQP {
             hints.append((kVTCompressionPropertyKey_SpatialAdaptiveQPLevel as String,
                           kVTQPModulationLevel_Disable, "no adaptive QP"))
         }
+        #endif
         var applied: [String] = []
         for hint in hints {
             var trialCompression = compression
