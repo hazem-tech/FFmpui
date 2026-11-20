@@ -28,15 +28,16 @@ SIZE_VARIANTS=(
   "simple|veryfast|keyint=-1:qpmin=51:aq-mode=0:sao=0:max-tu-size=4:cbqpoffs=12:crqpoffs=12"
   "plain-crf51|medium|keyint=-1"
 )
+# Round 1 (bytes at VMAF 95 on the 3 clips): slower aq-mode 4 2,342,586;
+# aq-mode 2 2,476,544; aq-mode 3 + no SAO 2,559,483; aq-mode 3 + psy-rd 1
+# 2,578,079; veryslow aq-mode 3 2,663,685; slower aq-mode 3 2,687,569;
+# slow aq-mode 3 2,734,411. Round 2 builds on aq-mode 4:
 QUALITY_VARIANTS=(
-  "slower-aq3|slower|aq-mode=3"
-  "slow-aq3|slow|aq-mode=3"
-  "veryslow-aq3|veryslow|aq-mode=3"
-  "slower-aq2|slower|aq-mode=2"
   "slower-aq4|slower|aq-mode=4"
-  "slower-aq3-nosao|slower|aq-mode=3:sao=0"
-  "slower-aq3-psy1|slower|aq-mode=3:psy-rd=1.0"
-  "slower-aq3-nosao-db|slower|aq-mode=3:sao=0:deblock=-1,-1"
+  "slower-aq4-nosao|slower|aq-mode=4:sao=0"
+  "slower-aq4-psy1|slower|aq-mode=4:psy-rd=1.0"
+  "slower-aq4-nosao-psy1|slower|aq-mode=4:sao=0:psy-rd=1.0"
+  "veryslow-aq4|veryslow|aq-mode=4"
 )
 QUALITY_CRFS=(18 21 24 27 30)
 
