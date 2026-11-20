@@ -37,6 +37,15 @@ jobs:
           echo "---- warnings ----"
           grep -E "(warning|error):" build.log | sort -u || echo "No warnings or errors"
 
+      - name: Build iOS app (simulator)
+        run: |
+          set -o pipefail
+          xcodebuild -project FFmpui.xcodeproj -target FFmpui-iOS -sdk iphonesimulator -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build-ios.log
+          echo "---- warnings ----"
+          grep -E "(warning|error):" build-ios.log | sort -u || echo "No warnings or errors"
+          test -d build/Debug-iphonesimulator/FFmpui-iOS.app
+
       - name: Check script bundled
         run: |
           ls build/Debug/FFmpui.app/Contents/Resources/

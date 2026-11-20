@@ -50,6 +50,20 @@ struct ContentView: View {
                      : "Lets other apps go first, so your Mac stays more responsive. Compressing may take longer.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Picker("Encoder", selection: $compressor.encoder) {
+                    Text("ffmpeg").tag(VideoCompressor.Encoder.ffmpeg)
+                    Text("AVFoundation (test)").tag(VideoCompressor.Encoder.avfoundation)
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .disabled(compressor.isRunning)
+                .padding(.top, 6)
+                Text(compressor.encoder == .ffmpeg
+                     ? "Encodes with ffmpeg's VideoToolbox HEVC encoder."
+                     : "Encodes with Apple's AVFoundation (the engine an iOS version would use). Metadata is copied the same way. Kept copies are named “name_copy_avf”, so you can compare them with ffmpeg's “name_copy”.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             if !compressor.log.isEmpty {
