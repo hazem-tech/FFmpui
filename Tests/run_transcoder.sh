@@ -51,11 +51,11 @@ run() {
   rm -f "$out"
 }
 run "app (Size + Speed)"
-run "  lowest bitrate only (before)" --min-qp 0 --adaptive-qp
+run "  lowest bitrate only (before)" --no-quality --min-qp 0 --adaptive-qp
+run "  without constant quality" --no-quality
 run "  with adaptive QP" --adaptive-qp
 run "  QP ≥ 45" --min-qp 45
-run "  + constant quality 0" --quality 0
-run "  quality 0 alone" --quality 0 --no-bitrate --min-qp 0 --adaptive-qp
+run "  quality 0 alone" --no-bitrate --min-qp 0 --adaptive-qp
 run "  without power saving" --no-power-saving
 run "  with speed over quality" --prioritize-speed
 run "  keyframe every 2 s" --keyframes 2

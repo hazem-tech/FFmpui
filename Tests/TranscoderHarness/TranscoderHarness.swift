@@ -10,7 +10,8 @@
 //    --scale <f>         1, 0.5 or 0.25 (default 1)
 //    --no-fps-cap        keep every frame (default: cap at 24 fps)
 //    --keyframes <s>     seconds between keyframes (default 10)
-//    --quality <q>       also ask for constant quality 0…1
+//    --quality <q>       constant quality 0…1 (default 0)
+//    --no-quality        don't ask for constant quality
 //    --no-bitrate        don't ask for the lowest bitrate
 //    --no-power-saving   don't ask for MaximizePowerEfficiency
 //    --prioritize-speed  ask for PrioritizeEncodingSpeedOverQuality
@@ -35,7 +36,7 @@ struct TranscoderHarness {
         }
         guard args.count >= 2 else {
             print("usage: transcoder-harness <source> <output> [--scale f] [--no-fps-cap] [--keyframes s] "
-                + "[--quality q] [--no-power-saving] [--prioritize-speed] [--min-qp n] [--adaptive-qp] [--no-bitrate] [--copy-metadata]")
+                + "[--quality q] [--no-power-saving] [--prioritize-speed] [--min-qp n] [--adaptive-qp] [--no-quality] [--no-bitrate] [--copy-metadata]")
             exit(2)
         }
         let source = URL(fileURLWithPath: args.removeFirst())
@@ -50,6 +51,7 @@ struct TranscoderHarness {
             case "--no-fps-cap": settings.maxFrameRate = nil
             case "--keyframes": settings.keyFrameInterval = Double(args.removeFirst()) ?? 10
             case "--quality": settings.quality = Double(args.removeFirst())
+            case "--no-quality": settings.quality = nil
             case "--no-bitrate": settings.bitrate = nil
             case "--no-power-saving": settings.powerEfficient = false
             case "--prioritize-speed": settings.prioritizeSpeed = true

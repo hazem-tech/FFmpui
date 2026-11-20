@@ -47,9 +47,10 @@ nonisolated enum VideoTranscoder {
         var maxFrameRate: Double? = 24
         /// 1 asks VideoToolbox for the lowest bitrate it can do.
         var bitrate: Int? = 1
-        /// Constant-quality target (0…1), for experiments. Alone it is risky:
-        /// an encoder that ignores it falls back to a high default bitrate.
-        var quality: Double?
+        /// Constant-quality target (0…1): 0 shaves off another ~1%. Never used
+        /// alone: an encoder that ignored it would fall back to a high default
+        /// bitrate, so the lowest bitrate and the quantizer floor stay too.
+        var quality: Double? = 0
         /// Seconds between keyframes. Keyframes are the biggest frames, so a
         /// long interval keeps the file small; 10 s still seeks quickly.
         var keyFrameInterval: Double = 10

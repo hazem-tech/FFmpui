@@ -39,14 +39,14 @@ FFmpui compresses your videos to HEVC (H.265), as small as you want them. Unlike
 |---|---|---|---|
 | Goal | the smallest file the **hardware** encoder makes, quickly and without heating the device | looks like the original, in as few bytes as possible | the smallest file possible, whatever it looks like |
 | Where | Mac and iPhone (same code: [`Shared/VideoTranscoder.swift`](Shared/VideoTranscoder.swift)) | Mac | Mac |
-| Encoder | Apple's VideoToolbox HEVC (media engine) at its lowest bitrate, power-saving | x265, 10-bit, `slower` preset; for each video, the highest CRF that still scores **VMAF ≥ 95** against the original | x265 tuned for the floor (no SAO, 4×4 transforms, big blocks, one keyframe…) |
+| Encoder | Apple's VideoToolbox HEVC (media engine): lowest bitrate and quality, quantizer never below 51, no adaptive quantization (Mac), power-saving | x265, 10-bit, `slower` preset; for each video, the highest CRF that still scores **VMAF ≥ 95** against the original | x265 tuned for the floor (no SAO, 4×4 transforms, big blocks, one keyframe…) |
 | Frame rate | capped at 24 fps | unchanged | capped at 24 fps |
 | Speed | fast | slow (a few test encodes per video, then the real one) | fast |
 
 - Videos at 24 fps or less keep their frame rate. HDR (HLG / PQ) videos stay 10-bit HDR in every mode (iPhone's extra Dolby Vision data isn't kept, as before).
 - **High priority** (Mac, x265 modes only): on, x265 uses all of the Mac's power, as fast as in Terminal; off, it runs on the efficiency cores only, so the Mac stays cool and quiet but compressing takes much longer. It isn't shown for Size + Speed: the hardware encoder runs in a system process at its own pace, so priority makes no difference there (that's also why the iPhone app has no such switch).
 - Size mode uses a single keyframe, so jumping around in a long video takes a moment longer.
-- **How small?** On the sample iPhone clip (720p, 30 fps, 10.6 Mb/s), Size mode gives about 12 kb/s of video, less than half of plain `-crf 51`. Size + Speed gives about 130 kb/s. At these sizes the untouched audio is usually the biggest part of the file.
+- **How small?** On the sample iPhone clip (720p, 30 fps, 10.6 Mb/s, 7.1 MB), Size mode gives about 12 kb/s of video (less than a third of plain `-crf 51`) and Size + Speed about 95 kb/s (the hardware encoder's lowest bitrate alone gave about 460 kb/s). At these sizes the untouched audio is usually the biggest part of the file.
 
 How the settings were chosen, and how to re-check them, is in [Tests](#tests).
 
