@@ -3,9 +3,9 @@
 //  FFmpui (iOS)
 //
 //  The iOS version of VideoCompressor: a queue of Photos videos, each one
-//  exported, encoded with the shared VideoTranscoder (same settings as the
-//  Mac's AVFoundation encoder), given the original's metadata by
-//  MetadataCopier, checked, and saved back to Photos.
+//  exported, encoded with the shared VideoTranscoder (the Mac's "Size +
+//  Speed" mode), given the original's metadata by MetadataCopier, checked,
+//  saved back to Photos, and its original moved to Recently Deleted.
 //
 
 import AVFoundation
@@ -21,7 +21,6 @@ struct PhotoItem: Identifiable, Equatable {
         case saving
         case done
         case failed(String)
-        case skipped(String)
     }
 
     let id = UUID()
@@ -42,9 +41,13 @@ struct PhotoItem: Identifiable, Equatable {
 
 @Observable
 final class PhotoCompressor {
+    private static let scaleKey = "scale"
+
     var items: [PhotoItem] = []
-    var replaceOriginals = false
-    var highPriority = true
+    /// Remembered between launches.
+    var scale: OutputScale = .full {
+        didSet { UserDefaults.standard.set(scale.rawValue, forKey: Self.scaleKey) }
+    }
     private(set) var isRunning = false
     private(set) var log: [String] = []
     private(set) var access = PhotoLibrary.authorization
@@ -55,6 +58,7 @@ final class PhotoCompressor {
     private let background = BackgroundRun()
 
     init() {
+        scale = OutputScale(rawValue: UserDefaults.standard.double(forKey: Self.scaleKey)) ?? .full
         background.onExpire = { [weak self] in
             self?.appendLog("iOS ended the background run.")
             self?.stop()
@@ -134,7 +138,8 @@ final class PhotoCompressor {
             finished += 1
         }
 
-        // One deletion request for all replaced originals, so iOS asks once.
+        // One deletion request for all replaced originals, so iOS asks once
+        // (apps can't skip that question).
         if !originalsToDelete.isEmpty {
             do {
                 try await PhotoLibrary.delete(ids: originalsToDelete)
@@ -178,7 +183,9 @@ final class PhotoCompressor {
             }
         }
 
-        let task = Task(priority: highPriority ? .userInitiated : .utility) {
+        // The hardware encoder runs in a system process at its own pace, so
+        // this task's priority wouldn't change anything.
+        let task = Task {
             try await self.process(item, progress: progress)
         }
         currentTask = task
@@ -191,8 +198,6 @@ final class PhotoCompressor {
                     $0.progress = 0
                 }
                 appendLog("■ Stopped")
-            } else if case .skipped = items.first(where: { $0.id == id })?.status {
-                // Reason already set.
             } else {
                 update(id) { $0.status = .failed(error.localizedDescription) }
                 appendLog("Error: \(error.localizedDescription)")
@@ -201,18 +206,9 @@ final class PhotoCompressor {
         currentTask = nil
     }
 
-    private struct Skip: Error {}
-
     private func process(_ item: PhotoItem, progress: @escaping @Sendable (Double) -> Void) async throws {
         let id = item.id
         let original = try PhotoLibrary.original(id: item.assetID)
-        if original.isEdited && replaceOriginals {
-            update(id) { $0.status = .skipped("Edited in Photos. Turn off Replace to compress the unedited original.") }
-            throw Skip()
-        }
-        if original.isEdited {
-            appendLog("Note: \(original.filename) has edits in Photos; the unedited original is compressed.")
-        }
 
         // Work in a private temp folder that is always cleaned up.
         let work = FileManager.default.temporaryDirectory
@@ -222,34 +218,44 @@ final class PhotoCompressor {
         try FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: work) }
 
+        // Original + compressed copy (+ the edited version, if any).
+        let copies: Int64 = original.isEdited ? 3 : 2
         if let size = original.fileSize,
            let free = try? work.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
                .volumeAvailableCapacityForImportantUsage,
-           free < size * 2 + 200_000_000 {
-            throw Failure.notEnoughSpace(needed: size * 2)
+           free < size * copies + 200_000_000 {
+            throw Failure.notEnoughSpace(needed: size * copies)
         }
 
+        // The compressed video keeps the original's name and replaces it.
         let filename = original.filename
-        let name = (filename as NSString).deletingPathExtension
-        let ext = (filename as NSString).pathExtension
         let source = work.appendingPathComponent(filename)
-        let newName = replaceOriginals ? filename : "\(name)_copy.\(ext)"
-        let output = outputFolder.appendingPathComponent(newName)
+        let output = outputFolder.appendingPathComponent(filename)
 
-        // 1. Original bytes (downloads from iCloud if needed)
-        try await PhotoLibrary.export(original, to: source, progress: progress)
+        // 1. Original bytes (downloads from iCloud if needed): the picture to
+        //    compress, and in any case the metadata to keep.
+        try await PhotoLibrary.export(original.resource, to: source, progress: progress)
         let originalSize = fileSize(source)
+        var content = source
+        if original.isEdited {
+            // Edited in Photos: compress the edit as Photos shows it, so it
+            // is kept (baked in) when the original is replaced.
+            appendLog("Note: \(filename) was edited in Photos; the edited version is compressed.")
+            update(id) { $0.progress = 0 }
+            content = work.appendingPathComponent("Edited.mov")
+            try await PhotoLibrary.exportEdited(original, to: content, progress: progress)
+        }
         update(id) {
             $0.status = .working
             $0.progress = 0
             $0.originalSize = originalSize
         }
 
-        // 2. Encode (same encoder and settings as the Mac)
+        // 2. Encode (the Mac's Size + Speed mode)
         try await VideoTranscoder.transcode(
-            source: source,
+            source: content,
             destination: output,
-            settings: .sizeAndSpeed(scale: 1),
+            settings: .sizeAndSpeed(scale: scale.rawValue),
             log: { line in Task { @MainActor in self.appendLog(line) } },
             progress: progress
         )
@@ -264,7 +270,7 @@ final class PhotoCompressor {
         }
 
         // 4. Check, like the script: it must open and be just as long.
-        let before = try await duration(of: source)
+        let before = try await duration(of: content)
         let after = try await duration(of: output)
         guard after > 0, abs(before - after) <= max(1.0, before * 0.01) else {
             throw Failure.checkFailed(before: before, after: after)
@@ -272,15 +278,15 @@ final class PhotoCompressor {
         let newSize = fileSize(output)
         await logResult(output, size: newSize)
 
-        // 5. Save to Photos
+        // 5. Save to Photos; the original is deleted when the run ends.
         update(id) { $0.status = .saving }
-        _ = try await PhotoLibrary.save(output, filename: newName, like: original.asset)
+        _ = try await PhotoLibrary.save(output, filename: filename, like: original.asset)
         update(id) {
             $0.status = .done
             $0.progress = 1
             $0.newSize = newSize
         }
-        if replaceOriginals { originalsToDelete.append(item.assetID) }
+        originalsToDelete.append(item.assetID)
     }
 
     enum Failure: LocalizedError {
@@ -313,6 +319,6 @@ final class PhotoCompressor {
             bitrate = String(format: "%.2f Mbit/s", Double(rate) / 1_000_000)
         }
         let sizeText = size.map { $0.formatted(.byteCount(style: .file)) } ?? "?"
-        appendLog("✔︎ AVFoundation: \(output.lastPathComponent) · \(sizeText) · video \(bitrate)")
+        appendLog("✔︎ Size + Speed: \(output.lastPathComponent) · \(sizeText) · video \(bitrate)")
     }
 }

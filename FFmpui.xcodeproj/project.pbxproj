@@ -390,7 +390,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = FFmpui;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "FFmpui saves the compressed videos to your library.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "FFmpui reads each video's original file to compress it, saves the compressed copy with the same date, location and camera details, and moves originals to Recently Deleted when you choose Replace.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "FFmpui reads each video's original file to compress it, saves the compressed copy with the same date, location and camera details, and moves the original to Recently Deleted.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -432,7 +432,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = FFmpui;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "FFmpui saves the compressed videos to your library.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "FFmpui reads each video's original file to compress it, saves the compressed copy with the same date, location and camera details, and moves originals to Recently Deleted when you choose Replace.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "FFmpui reads each video's original file to compress it, saves the compressed copy with the same date, location and camera details, and moves the original to Recently Deleted.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

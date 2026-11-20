@@ -1,14 +1,18 @@
 name: Tune settings
 
-# Compares candidate encoder settings on the test clips (Tests/tune.sh):
-# Size mode by total bytes, Size + Quality by bytes at VMAF 95. Run it by
-# hand after changing the candidates; the winners go into compress_video.sh.
+# Compares candidate encoder settings on the test clips:
+#   Size mode by total bytes, Size + Quality by bytes at VMAF 95
+#   (Tests/tune.sh; the winners go into compress_video.sh), and
+#   Size + Speed variations of the shared hardware encoder
+#   (Tests/run_transcoder.sh; GitHub's M1 runners have a paravirtualized
+#   hardware HEVC encoder).
 
 on:
   workflow_dispatch:
   push:
     paths:
       - Tests/tune.sh
+      - Tests/run_transcoder.sh
       - .github/workflows/tune.yml
 
 jobs:
@@ -47,3 +51,25 @@ jobs:
           echo "| Variant | Preset | x265 | Bytes at VMAF 95 | Per clip | Seconds |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
           Tests/tune.sh quality "$RUNNER_TEMP/fixtures" "${{ matrix.variant }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  speed:
+    name: Size + Speed · ${{ matrix.fixture }}
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        fixture: [IMG_6758.mov, hlg60.mov]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select newest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)"
+      - run: brew install ffmpeg exiftool
+      - run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"
+      - name: Variations
+        run: |
+          {
+            echo "### Size + Speed · ${{ matrix.fixture }}"
+            echo '```'
+            Tests/run_transcoder.sh "$RUNNER_TEMP/fixtures/${{ matrix.fixture }}"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"

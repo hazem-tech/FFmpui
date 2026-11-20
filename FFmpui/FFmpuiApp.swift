@@ -13,6 +13,6 @@ struct FFmpuiApp: App {
         Window("FFmpui", id: "main") {
             ContentView()
         }
-        .defaultSize(width: 640, height: 600)
+        .defaultSize(width: 660, height: 700)
     }
 }

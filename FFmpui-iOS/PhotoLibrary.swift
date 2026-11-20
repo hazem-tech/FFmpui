@@ -2,11 +2,12 @@
 //  PhotoLibrary.swift
 //  FFmpui (iOS)
 //
-//  Photos access: reading a video's original file, saving the compressed
-//  copy as a new asset (with the original's date, location, favorite,
-//  hidden state and albums) and deleting originals.
+//  Photos access: reading a video's original file (or its edited version),
+//  saving the compressed copy as a new asset (with the original's date,
+//  location, favorite, hidden state and albums) and deleting originals.
 //
 
+import AVFoundation
 import CoreLocation
 import Photos
 import UIKit
@@ -15,20 +16,25 @@ nonisolated enum PhotoLibrary {
     enum Failure: LocalizedError {
         case notInLibrary
         case noVideoFile
+        case noEditedVersion
 
         var errorDescription: String? {
             switch self {
             case .notInLibrary: "This video is no longer in the Photos library"
             case .noVideoFile: "No video file found for this item"
+            case .noEditedVersion: "Photos could not provide the edited version of this video"
             }
         }
     }
 
     struct Original {
         let asset: PHAsset
+        /// The unedited original file.
         let resource: PHAssetResource
         /// The video was edited in Photos (trim, filter, slo-mo ramp …).
         let isEdited: Bool
+        /// Photos' rendered edit, when it has one as a file.
+        let rendered: PHAssetResource?
         /// Size of the original file, if Photos tells us.
         let fileSize: Int64?
         var filename: String { resource.originalFilename }
@@ -56,6 +62,7 @@ nonisolated enum PhotoLibrary {
             asset: asset,
             resource: video,
             isEdited: resources.contains { $0.type == .adjustmentData || $0.type == .fullSizeVideo },
+            rendered: resources.first { $0.type == .fullSizeVideo },
             fileSize: size
         )
     }
@@ -67,10 +74,11 @@ nonisolated enum PhotoLibrary {
 
     // MARK: - Export
 
-    /// Writes the original file's exact bytes to `url`, downloading it from
-    /// iCloud if needed. Cancelling the task cancels the request.
+    /// Writes a resource's exact bytes (e.g. the original file) to `url`,
+    /// downloading it from iCloud if needed. Cancelling the task cancels the
+    /// request.
     @concurrent
-    static func export(_ original: Original, to url: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
+    static func export(_ resource: PHAssetResource, to url: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
         let options = PHAssetResourceRequestOptions()
         options.isNetworkAccessAllowed = true
         options.progressHandler = { value in progress(value) }
@@ -83,7 +91,7 @@ nonisolated enum PhotoLibrary {
 
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                let requestID = manager.requestData(for: original.resource, options: options) { data in
+                let requestID = manager.requestData(for: resource, options: options) { data in
                     sink.write(data)
                 } completionHandler: { error in
                     let writeError = sink.finish()
@@ -99,6 +107,40 @@ nonisolated enum PhotoLibrary {
             if let id = sink.requestID { manager.cancelDataRequest(id) }
         }
         try Task.checkCancellation()
+    }
+
+    /// Writes the edited version of a video, as Photos shows it, to `url`
+    /// (a .mov): Photos' rendered file if it has one, otherwise rendered now.
+    @concurrent
+    static func exportEdited(_ original: Original, to url: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
+        if let rendered = original.rendered {
+            try await export(rendered, to: url, progress: progress)
+            return
+        }
+
+        let options = PHVideoRequestOptions()
+        options.version = .current
+        options.deliveryMode = .highQualityFormat
+        options.isNetworkAccessAllowed = true
+        options.progressHandler = { value, _, _, _ in progress(value) }
+        let box: SessionBox = try await withCheckedThrowingContinuation { continuation in
+            PHImageManager.default().requestExportSession(
+                forVideo: original.asset, options: options, exportPreset: AVAssetExportPresetHEVCHighestQuality
+            ) { session, info in
+                if let session {
+                    continuation.resume(returning: SessionBox(session: session))
+                } else {
+                    continuation.resume(throwing: (info?[PHImageErrorKey] as? Error) ?? Failure.noEditedVersion)
+                }
+            }
+        }
+        try? FileManager.default.removeItem(at: url)
+        try await box.session.export(to: url, as: .mov)
+    }
+
+    private final class SessionBox: @unchecked Sendable {
+        let session: AVAssetExportSession
+        init(session: AVAssetExportSession) { self.session = session }
     }
 
     /// Writes the chunks Photos hands us; called on Photos' own queue.

@@ -33,38 +33,8 @@ struct ContentView: View {
 
             fileList
 
-            VStack(alignment: .leading, spacing: 4) {
-                Toggle("Replace original files", isOn: $compressor.replaceOriginals)
-                    .disabled(compressor.isRunning)
-                Text(compressor.replaceOriginals
-                     ? "The original videos will be overwritten with the compressed versions."
-                     : "Originals are kept. Compressed videos are saved next to them as “name_copy”.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Toggle("High priority", isOn: $compressor.highPriority)
-                    .disabled(compressor.isRunning)
-                    .padding(.top, 6)
-                Text(compressor.highPriority
-                     ? "Compresses as fast as running the script in Terminal."
-                     : "Lets other apps go first, so your Mac stays more responsive. Compressing may take longer.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Picker("Encoder", selection: $compressor.encoder) {
-                    Text("ffmpeg").tag(VideoCompressor.Encoder.ffmpeg)
-                    Text("AVFoundation (test)").tag(VideoCompressor.Encoder.avfoundation)
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
+            options
                 .disabled(compressor.isRunning)
-                .padding(.top, 6)
-                Text(compressor.encoder == .ffmpeg
-                     ? "Encodes with ffmpeg's VideoToolbox HEVC encoder."
-                     : "Encodes with Apple's AVFoundation (the engine an iOS version would use). Metadata is copied the same way. Kept copies are named “name_copy_avf”, so you can compare them with ffmpeg's “name_copy”.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
 
             if !compressor.log.isEmpty {
                 LogView(lines: compressor.log)
@@ -78,34 +48,92 @@ struct ContentView: View {
                     Button("Stop", systemImage: "stop.fill", role: .destructive) { compressor.stop() }
                         .controlSize(.large)
                 } else {
-                    Button("Start", systemImage: "play.fill") {
-                        if compressor.replaceOriginals {
-                            confirmReplace = true
-                        } else {
-                            compressor.start()
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!compressor.canStart)
+                    Button("Start", systemImage: "play.fill") { compressor.start() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(!compressor.canStart)
                 }
             }
         }
         .padding(20)
-        .frame(minWidth: 560, minHeight: 500)
-        .confirmationDialog(
-            "Replace \(compressor.pendingCount) original video\(compressor.pendingCount == 1 ? "" : "s")?",
-            isPresented: $confirmReplace
-        ) {
-            Button("Replace Originals", role: .destructive) { compressor.start() }
+        .frame(minWidth: 600, minHeight: 600)
+        // Asked when the switch is turned on, not on every Start; the choice
+        // is remembered.
+        .confirmationDialog("Replace original files?", isPresented: $confirmReplace) {
+            Button("Replace Originals", role: .destructive) { compressor.replaceOriginals = true }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Each original is only replaced after the compressed file has been checked. This can't be undone.")
+            Text("From now on, each original video is overwritten by its compressed version, once the compressed file has been checked. This can't be undone.")
         }
     }
 
     // MARK: - Pieces
+
+    private var options: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("Mode", selection: $compressor.mode) {
+                ForEach(VideoCompressor.Mode.allCases) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .fixedSize()
+            caption(compressor.mode.caption)
+
+            Picker("Scale", selection: $compressor.scale) {
+                ForEach(OutputScale.allCases) { scale in
+                    Text(scale.label).tag(scale)
+                }
+            }
+            .pickerStyle(.segmented)
+            .fixedSize()
+            .padding(.top, 6)
+            caption(scaleCaption)
+
+            Toggle("Replace original files", isOn: replaceBinding)
+                .padding(.top, 6)
+            caption(compressor.replaceOriginals
+                    ? "The original videos are overwritten with the compressed versions."
+                    : "Originals are kept. Compressed videos are saved next to them as “name_copy”.")
+
+            if compressor.mode.usesCPUEncoder {
+                Toggle("High priority", isOn: $compressor.highPriority)
+                    .padding(.top, 6)
+                caption(compressor.highPriority
+                        ? "Uses all of the Mac's power, as fast as running the script in Terminal."
+                        : "Runs on the efficiency cores only: the Mac stays cool and quiet, but compressing takes much longer.")
+            }
+        }
+    }
+
+    private var scaleCaption: String {
+        switch compressor.scale {
+        case .full: "Same width and height as the original."
+        case .half: "Half the width and height."
+        case .quarter: "A quarter of the width and height."
+        }
+    }
+
+    /// Turning Replace on asks first; turning it off doesn't.
+    private var replaceBinding: Binding<Bool> {
+        Binding {
+            compressor.replaceOriginals
+        } set: { isOn in
+            if isOn {
+                confirmReplace = true
+            } else {
+                compressor.replaceOriginals = false
+            }
+        }
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -216,8 +244,16 @@ private struct VideoRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if item.status == .working {
-                    ProgressView(value: item.progress)
-                        .progressViewStyle(.linear)
+                    if let phase = item.phase, phase.hasPrefix("Finding") {
+                        // Quality search: no meaningful percentage yet.
+                        ProgressView(phase + "…")
+                            .progressViewStyle(.linear)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ProgressView(value: item.progress)
+                            .progressViewStyle(.linear)
+                    }
                 } else {
                     Text(detail)
                         .font(.caption)

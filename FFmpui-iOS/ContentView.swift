@@ -10,7 +10,6 @@ import UIKit
 struct ContentView: View {
     @State private var compressor = PhotoCompressor()
     @State private var selection: [PhotosPickerItem] = []
-    @State private var confirmReplace = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -59,16 +58,6 @@ struct ContentView: View {
                 compressor.add(assetIDs: selection.compactMap(\.itemIdentifier))
                 selection = []
             }
-            .confirmationDialog(
-                "Replace \(compressor.pendingCount) original video\(compressor.pendingCount == 1 ? "" : "s")?",
-                isPresented: $confirmReplace,
-                titleVisibility: .visible
-            ) {
-                Button("Replace Originals", role: .destructive) { compressor.start() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Each original is only deleted after its compressed copy has been checked and saved. iOS asks you to confirm, and the originals stay in Recently Deleted for 30 days.")
-            }
         }
         .task {
             if PhotoLibrary.authorization == .notDetermined {
@@ -86,7 +75,7 @@ struct ContentView: View {
         ContentUnavailableView {
             Label("No Videos", systemImage: "film.stack")
         } description: {
-            Text("Add videos from your library. They're compressed to HEVC and keep their date, location and camera details.")
+            Text("Add videos from your library. Each one is replaced by a much smaller HEVC copy that keeps its date, location and camera details.")
         } actions: {
             PhotosPicker(selection: $selection, matching: .videos, photoLibrary: .shared()) {
                 Text("Add Videos")
@@ -98,16 +87,20 @@ struct ContentView: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Toggle("Replace originals", isOn: $compressor.replaceOriginals)
-                .disabled(compressor.isRunning)
-            Text(compressor.replaceOriginals
-                 ? "Originals are moved to Recently Deleted after their compressed copies are saved."
-                 : "Originals are kept. Compressed videos are added to your library as “name_copy”.")
+            LabeledContent("Scale") {
+                Picker("Scale", selection: $compressor.scale) {
+                    ForEach(OutputScale.allCases) { scale in
+                        Text(scale.label).tag(scale)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+            }
+            .disabled(compressor.isRunning)
+            Text("The smallest file the hardware encoder can make, at most 24 fps. Originals move to Recently Deleted once their compressed copies are saved; edited videos keep their edits.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
-            Toggle("High priority", isOn: $compressor.highPriority)
-                .disabled(compressor.isRunning)
+                .fixedSize(horizontal: false, vertical: true)
 
             if !compressor.log.isEmpty {
                 LogView(lines: compressor.log)
@@ -122,15 +115,9 @@ struct ContentView: View {
                     Button("Stop", systemImage: "stop.fill", role: .destructive) { compressor.stop() }
                         .buttonStyle(.bordered)
                 } else {
-                    Button("Start", systemImage: "play.fill") {
-                        if compressor.replaceOriginals {
-                            confirmReplace = true
-                        } else {
-                            compressor.start()
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!compressor.canStart)
+                    Button("Start", systemImage: "play.fill") { compressor.start() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!compressor.canStart)
                 }
             }
             .controlSize(.large)
@@ -217,8 +204,6 @@ private struct PhotoRow: View {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
         case .failed:
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
-        case .skipped:
-            Image(systemName: "forward.fill").foregroundStyle(.secondary)
         }
     }
 
@@ -240,8 +225,6 @@ private struct PhotoRow: View {
             return percent > 0 ? "\(sizes) (−\(percent)%)" : sizes
         case .failed(let reason):
             return reason
-        case .skipped(let reason):
-            return "Skipped: \(reason)"
         }
     }
 }

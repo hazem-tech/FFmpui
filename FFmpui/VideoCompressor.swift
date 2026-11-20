@@ -3,7 +3,10 @@
 //  FFmpui
 //
 //  Runs the bundled compress_video.sh script on each queued video and keeps
-//  track of progress so the UI can show it.
+//  track of progress so the UI can show it. "Size + Speed" encodes with the
+//  shared AVFoundation VideoTranscoder (like the iPhone app) and then lets the
+//  script check the file and copy the metadata; the other modes are encoded
+//  by the script's ffmpeg / x265.
 //
 
 import AVFoundation
@@ -26,33 +29,85 @@ struct VideoItem: Identifiable, Equatable {
     var originalSize: Int64?
     var newSize: Int64?
     var outputURL: URL?
+    /// What the script says it is doing (e.g. the quality search).
+    var phase: String?
 }
 
 @Observable
 final class VideoCompressor {
-    enum Encoder {
-        /// ffmpeg's hevc_videotoolbox, run by compress_video.sh.
-        case ffmpeg
-        /// AVFoundation (VideoTranscoder.swift), then the script's metadata step.
-        case avfoundation
+    enum Mode: String, CaseIterable, Identifiable {
+        /// Apple's hardware encoder (shared VideoTranscoder, as on iPhone).
+        case sizeAndSpeed
+        /// x265, each video's quality setting found by a VMAF search.
+        case sizeAndQuality
+        /// x265, the smallest file possible.
+        case size
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .sizeAndSpeed: "Size + Speed"
+            case .sizeAndQuality: "Size + Quality"
+            case .size: "Size"
+            }
+        }
+
+        var caption: String {
+            switch self {
+            case .sizeAndSpeed:
+                "The smallest file Apple's hardware encoder can make: fast, and the Mac stays cool. Frame rate capped at 24 fps. Same as the iPhone app."
+            case .sizeAndQuality:
+                "Looks like the original in as few bytes as possible: the best setting is found for each video. Same frame rate. Slow."
+            case .size:
+                "The smallest file possible, whatever it looks like. Frame rate capped at 24 fps."
+            }
+        }
+
+        /// compress_video.sh's `--mode`.
+        var scriptMode: String {
+            switch self {
+            case .sizeAndSpeed: "speed"
+            case .sizeAndQuality: "quality"
+            case .size: "size"
+            }
+        }
+
+        /// Encoded by x265 on the CPU, where High priority makes a difference.
+        /// (The hardware encoder runs in a system process at its own pace.)
+        var usesCPUEncoder: Bool { self != .sizeAndSpeed }
     }
 
     static let videoExtensions: Set<String> = ["mp4", "mov", "m4v"]
-    /// Name ending of AVFoundation results, so they can sit next to
-    /// ffmpeg's "_copy" files for comparison.
-    static let avfoundationSuffix = "_copy_avf"
 
     /// Folders where Homebrew / MacPorts install command line tools.
     /// GUI apps don't get the shell's PATH, so we look in these explicitly.
     static let toolSearchPaths = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin", "/usr/bin"]
     static let requiredTools = ["ffmpeg", "ffprobe", "exiftool"]
 
+    private enum Key {
+        static let replaceOriginals = "replaceOriginals"
+        static let mode = "mode"
+        static let scale = "scale"
+        static let highPriority = "highPriority"
+    }
+
     var items: [VideoItem] = []
-    var replaceOriginals = false
-    /// On: encode at the same high priority as a command typed in Terminal,
-    /// even when the app is in the background. Off: let other apps go first.
-    var highPriority = true
-    var encoder: Encoder = .ffmpeg
+    // Settings are remembered between launches.
+    var replaceOriginals = false {
+        didSet { UserDefaults.standard.set(replaceOriginals, forKey: Key.replaceOriginals) }
+    }
+    var mode: Mode = .sizeAndSpeed {
+        didSet { UserDefaults.standard.set(mode.rawValue, forKey: Key.mode) }
+    }
+    var scale: OutputScale = .full {
+        didSet { UserDefaults.standard.set(scale.rawValue, forKey: Key.scale) }
+    }
+    /// x265 modes only. On: all of the Mac's power, like the script in
+    /// Terminal. Off: efficiency cores only (cool and quiet, but slower).
+    var highPriority = true {
+        didSet { UserDefaults.standard.set(highPriority, forKey: Key.highPriority) }
+    }
     private(set) var isRunning = false
     private(set) var log: [String] = []
     private(set) var missingTools: [String] = []
@@ -62,6 +117,11 @@ final class VideoCompressor {
     private var stopRequested = false
 
     init() {
+        let defaults = UserDefaults.standard
+        replaceOriginals = defaults.bool(forKey: Key.replaceOriginals)
+        mode = defaults.string(forKey: Key.mode).flatMap(Mode.init(rawValue:)) ?? .sizeAndSpeed
+        scale = OutputScale(rawValue: defaults.double(forKey: Key.scale)) ?? .full
+        highPriority = defaults.object(forKey: Key.highPriority) as? Bool ?? true
         refreshToolCheck()
     }
 
@@ -123,9 +183,9 @@ final class VideoCompressor {
         var found: [URL] = []
         for case let file as URL in enumerator {
             guard isVideo(file) else { continue }
-            // Skip results of a previous run.
+            // Skip results of a previous run ("_copy_avf": older versions).
             let name = file.deletingPathExtension().lastPathComponent
-            if name.hasSuffix("_copy") || name.hasSuffix(avfoundationSuffix) { continue }
+            if name.hasSuffix("_copy") || name.hasSuffix("_copy_avf") { continue }
             if (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
                 found.append(file)
             }
@@ -206,27 +266,33 @@ final class VideoCompressor {
             $0.progress = 0
             $0.newSize = nil
             $0.outputURL = nil
+            $0.phase = nil
         }
         appendLog("▶︎ \(item.url.path)")
 
+        let mode = mode
         var arguments = replaceOriginals ? ["--replace"] : []
-        if encoder == .avfoundation {
+        if mode == .sizeAndSpeed {
             // Encode here, then let the script check the result, copy the
             // metadata / file attributes and move it into place.
             guard let encoded = await encodeWithAVFoundation(item) else { return }
-            arguments += ["--encoded", encoded.path, "--suffix", Self.avfoundationSuffix]
+            arguments += ["--encoded", encoded.path]
+        } else {
+            arguments += ["--mode", mode.scriptMode, "--scale", scale.argument]
         }
 
-        await runScript(script, arguments: arguments + ["--", item.url.path], for: id)
+        await runScript(script, arguments: arguments + ["--", item.url.path], for: id, mode: mode)
+        update(id) { $0.phase = nil }
 
         if let output = items.first(where: { $0.id == id })?.outputURL,
            items.first(where: { $0.id == id })?.status == .done {
-            await logResult(output)
+            await logResult(output, mode: mode)
         }
     }
 
-    /// Runs VideoTranscoder into the same hidden temp file name the script
-    /// would use. Returns nil (with the item's status set) on failure or Stop.
+    /// Size + Speed: runs VideoTranscoder into the same hidden temp file name
+    /// the script would use. Returns nil (with the item's status set) on
+    /// failure or Stop.
     private func encodeWithAVFoundation(_ item: VideoItem) async -> URL? {
         let id = item.id
         let source = item.url
@@ -234,14 +300,15 @@ final class VideoCompressor {
         let ext = source.pathExtension
         let tempName = replaceOriginals
             ? ".\(name).ffmpui-tmp.\(ext)"
-            : ".\(name)\(Self.avfoundationSuffix).ffmpui-tmp.\(ext)"
+            : ".\(name)_copy.ffmpui-tmp.\(ext)"
         let destination = source.deletingLastPathComponent().appendingPathComponent(tempName)
+        let settings = VideoTranscoder.Settings.sizeAndSpeed(scale: scale.rawValue)
 
-        let task = Task(priority: highPriority ? .userInitiated : .utility) {
+        let task = Task {
             try await VideoTranscoder.transcode(
                 source: source,
                 destination: destination,
-                settings: .sizeAndSpeed(scale: 1),
+                settings: settings,
                 log: { line in Task { @MainActor in self.appendLog(line) } },
                 progress: { value in Task { @MainActor in self.update(id) { $0.progress = value } } }
             )
@@ -261,8 +328,8 @@ final class VideoCompressor {
                 }
                 appendLog("■ Stopped")
             } else {
-                update(id) { $0.status = .failed("AVFoundation could not encode this file: \(error.localizedDescription)") }
-                appendLog("AVFoundation error: \(error.localizedDescription)")
+                update(id) { $0.status = .failed("Could not encode this file: \(error.localizedDescription)") }
+                appendLog("Encoder error: \(error.localizedDescription)")
             }
             return nil
         }
@@ -270,7 +337,7 @@ final class VideoCompressor {
 
     /// Runs compress_video.sh for one file and turns its output into status,
     /// progress and log lines.
-    private func runScript(_ script: URL, arguments: [String], for id: UUID) async {
+    private func runScript(_ script: URL, arguments: [String], for id: UUID, mode: Mode) async {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = [script.path] + arguments
@@ -278,7 +345,9 @@ final class VideoCompressor {
         process.standardOutput = pipe
         process.standardError = pipe
         process.standardInput = FileHandle.nullDevice
-        process.qualityOfService = highPriority ? .userInitiated : .utility
+        // Only x265 is CPU-heavy: there, low priority keeps it on the
+        // efficiency cores. The rest (ExifTool, checks) runs at full speed.
+        process.qualityOfService = mode.usesCPUEncoder && !highPriority ? .background : .userInitiated
 
         do {
             try process.run()
@@ -295,6 +364,9 @@ final class VideoCompressor {
             for try await line in pipe.fileHandleForReading.bytes.lines {
                 if line.hasPrefix("@@DURATION ") {
                     duration = Double(line.dropFirst("@@DURATION ".count)) ?? 0
+                } else if line.hasPrefix("@@PHASE ") {
+                    let phase = String(line.dropFirst("@@PHASE ".count))
+                    update(id) { $0.phase = phase }
                 } else if line.hasPrefix("out_time_us=") {
                     if duration > 0, let micros = Double(line.dropFirst("out_time_us=".count)) {
                         let value = min(max(micros / 1_000_000 / duration, 0), 1)
@@ -348,9 +420,9 @@ final class VideoCompressor {
         }
     }
 
-    /// One line per finished file to compare the two encoders:
-    /// encoder, file size and the video track's average bitrate.
-    private func logResult(_ output: URL) async {
+    /// One line per finished file: mode, file size and the video track's
+    /// average bitrate.
+    private func logResult(_ output: URL, mode: Mode) async {
         let size = (try? output.resourceValues(forKeys: [.fileSizeKey]).fileSize).map {
             Int64($0).formatted(.byteCount(style: .file))
         } ?? "?"
@@ -359,8 +431,7 @@ final class VideoCompressor {
            let rate = try? await track.load(.estimatedDataRate), rate > 0 {
             bitrate = String(format: "%.2f Mbit/s", Double(rate) / 1_000_000)
         }
-        let label = encoder == .avfoundation ? "AVFoundation" : "ffmpeg"
-        appendLog("✔︎ \(label): \(output.lastPathComponent) · \(size) · video \(bitrate)")
+        appendLog("✔︎ \(mode.label): \(output.lastPathComponent) · \(size) · video \(bitrate)")
     }
 
     /// ffmpeg's `-progress` output is a series of `key=value` lines.
