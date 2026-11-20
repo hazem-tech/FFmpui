@@ -13,25 +13,48 @@ on:
     paths:
       - Tests/tune.sh
       - Tests/run_transcoder.sh
+      - Tests/TranscoderHarness/**
+      - Shared/VideoTranscoder.swift
       - .github/workflows/tune.yml
 
-# A newer push to the same branch replaces a run that is still going.
+# Sweeps are slow: a newer push waits for the running one instead of
+# cancelling it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
+  # What to run: everything when started by hand; on a push, only the parts
+  # whose files changed (x265 sweeps: Tests/tune.sh; Size + Speed: the shared
+  # encoder or its harness).
   variants:
     runs-on: ubuntu-latest
     outputs:
       quality: ${{ steps.list.outputs.quality }}
+      x265: ${{ steps.list.outputs.x265 }}
+      speed: ${{ steps.list.outputs.speed }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - id: list
-        run: echo "quality=$(Tests/tune.sh quality-variants | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "quality=$(Tests/tune.sh quality-variants | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
+          before="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "push" ] && git cat-file -e "$before^{commit}" 2>/dev/null; then
+            changed=$(git diff --name-only "$before" "${{ github.sha }}")
+          else
+            changed=$'Tests/tune.sh\nTests/run_transcoder.sh'
+          fi
+          echo "$changed"
+          if grep -qx 'Tests/tune.sh' <<< "$changed"; then echo "x265=true"; else echo "x265=false"; fi >> "$GITHUB_OUTPUT"
+          if grep -qE '^(Tests/run_transcoder.sh|Tests/TranscoderHarness/|Shared/VideoTranscoder.swift)' <<< "$changed"; then
+            echo "speed=true"; else echo "speed=false"; fi >> "$GITHUB_OUTPUT"
 
   size:
     name: Size mode
+    needs: variants
+    if: needs.variants.outputs.x265 == 'true'
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v5
@@ -42,6 +65,7 @@ jobs:
   quality:
     name: Quality · ${{ matrix.variant }}
     needs: variants
+    if: needs.variants.outputs.x265 == 'true'
     runs-on: macos-26
     strategy:
       fail-fast: false
@@ -59,6 +83,8 @@ jobs:
 
   speed:
     name: Size + Speed · ${{ matrix.fixture }}
+    needs: variants
+    if: needs.variants.outputs.speed == 'true'
     runs-on: macos-26
     strategy:
       fail-fast: false

@@ -46,8 +46,9 @@ nonisolated enum VideoTranscoder {
         /// Frames above this rate are dropped; nil keeps every frame.
         var maxFrameRate: Double? = 24
         /// 1 asks VideoToolbox for the lowest bitrate it can do.
-        var bitrate: Int = 1
-        /// Constant-quality mode (0…1) instead of `bitrate`, for experiments.
+        var bitrate: Int? = 1
+        /// Constant-quality target (0…1), for experiments. Alone it is risky:
+        /// an encoder that ignores it falls back to a high default bitrate.
         var quality: Double?
         /// Seconds between keyframes. Keyframes are the biggest frames, so a
         /// long interval keeps the file small; 10 s still seeks quickly.
@@ -57,12 +58,14 @@ nonisolated enum VideoTranscoder {
         /// Ask the encoder to favor speed over quality (experiment: at the
         /// lowest bitrate it can make *bigger* files, like faster x265 presets).
         var prioritizeSpeed = false
-        /// Lowest quantizer the encoder may use (51 = HEVC's coarsest), so
-        /// it can't spend bits the lowest bitrate doesn't ask for.
-        var minFrameQP: Int?
+        /// Lowest quantizer the encoder may use (51 = HEVC's coarsest). The
+        /// lowest bitrate alone leaves the hardware encoder well above it:
+        /// this makes the video about 4× smaller (Tests/run_transcoder.sh).
+        var minFrameQP: Int? = 51
         /// Let the encoder vary the quantizer within a frame (detail vs. flat
-        /// areas). Off saves bits when quality doesn't matter. (Mac only.)
-        var adaptiveQP = true
+        /// areas). Off saves another ~10% when quality doesn't matter.
+        /// (Mac only; iOS has no such setting.)
+        var adaptiveQP = false
 
         /// Both apps' "Size + Speed" mode.
         static func sizeAndSpeed(scale: Double) -> Settings {
@@ -353,10 +356,11 @@ nonisolated enum VideoTranscoder {
             AVVideoAllowFrameReorderingKey: true,
             AVVideoMaxKeyFrameIntervalDurationKey: settings.keyFrameInterval,
         ]
+        if let bitrate = settings.bitrate {
+            compression[AVVideoAverageBitRateKey] = bitrate
+        }
         if let quality = settings.quality {
             compression[AVVideoQualityKey] = quality
-        } else {
-            compression[AVVideoAverageBitRateKey] = settings.bitrate
         }
         if let outputRate {
             compression[AVVideoExpectedSourceFrameRateKey] = outputRate
@@ -434,7 +438,8 @@ nonisolated enum VideoTranscoder {
         if let maxRate {
             summary += String(format: ", %.3g → %.3g fps", frameRate, maxRate)
         }
-        summary += settings.quality.map { String(format: ", quality %.2f", $0) } ?? ", lowest bitrate"
+        if settings.bitrate != nil { summary += ", lowest bitrate" }
+        if let quality = settings.quality { summary += String(format: ", quality %.2f", quality) }
         summary += String(format: ", keyframe every %.3g s", settings.keyFrameInterval)
         if !applied.isEmpty { summary += ", " + applied.joined(separator: ", ") }
 

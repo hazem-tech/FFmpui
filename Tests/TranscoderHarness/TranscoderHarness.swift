@@ -10,11 +10,12 @@
 //    --scale <f>         1, 0.5 or 0.25 (default 1)
 //    --no-fps-cap        keep every frame (default: cap at 24 fps)
 //    --keyframes <s>     seconds between keyframes (default 10)
-//    --quality <q>       constant quality 0…1 instead of the lowest bitrate
+//    --quality <q>       also ask for constant quality 0…1
+//    --no-bitrate        don't ask for the lowest bitrate
 //    --no-power-saving   don't ask for MaximizePowerEfficiency
 //    --prioritize-speed  ask for PrioritizeEncodingSpeedOverQuality
-//    --min-qp <n>        lowest quantizer allowed (MinAllowedFrameQP)
-//    --no-adaptive-qp    turn off SpatialAdaptiveQPLevel
+//    --min-qp <n>        lowest quantizer allowed (MinAllowedFrameQP; 0 = not set)
+//    --adaptive-qp       leave SpatialAdaptiveQPLevel on (default: off)
 //    --copy-metadata     then copy the source's metadata with MetadataCopier
 //                        (what the iOS app does)
 //    --encoders          only list the HEVC encoders VideoToolbox has
@@ -34,7 +35,7 @@ struct TranscoderHarness {
         }
         guard args.count >= 2 else {
             print("usage: transcoder-harness <source> <output> [--scale f] [--no-fps-cap] [--keyframes s] "
-                + "[--quality q] [--no-power-saving] [--prioritize-speed] [--min-qp n] [--no-adaptive-qp] [--copy-metadata]")
+                + "[--quality q] [--no-power-saving] [--prioritize-speed] [--min-qp n] [--adaptive-qp] [--no-bitrate] [--copy-metadata]")
             exit(2)
         }
         let source = URL(fileURLWithPath: args.removeFirst())
@@ -49,10 +50,11 @@ struct TranscoderHarness {
             case "--no-fps-cap": settings.maxFrameRate = nil
             case "--keyframes": settings.keyFrameInterval = Double(args.removeFirst()) ?? 10
             case "--quality": settings.quality = Double(args.removeFirst())
+            case "--no-bitrate": settings.bitrate = nil
             case "--no-power-saving": settings.powerEfficient = false
             case "--prioritize-speed": settings.prioritizeSpeed = true
-            case "--min-qp": settings.minFrameQP = Int(args.removeFirst())
-            case "--no-adaptive-qp": settings.adaptiveQP = false
+            case "--min-qp": settings.minFrameQP = Int(args.removeFirst()).flatMap { $0 > 0 ? $0 : nil }
+            case "--adaptive-qp": settings.adaptiveQP = true
             case "--copy-metadata": copyMetadata = true
             default:
                 print("Unknown option \(option)")
