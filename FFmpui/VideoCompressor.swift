@@ -270,7 +270,7 @@ final class VideoCompressor {
         }
         appendLog("▶︎ \(item.url.path)")
 
-        let mode = mode
+        let mode = self.mode
         var arguments = replaceOriginals ? ["--replace"] : []
         if mode == .sizeAndSpeed {
             // Encode here, then let the script check the result, copy the

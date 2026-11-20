@@ -242,7 +242,7 @@ final class PhotoCompressor {
             // is kept (baked in) when the original is replaced.
             appendLog("Note: \(filename) was edited in Photos; the edited version is compressed.")
             update(id) { $0.progress = 0 }
-            content = work.appendingPathComponent("Edited.mov")
+            content = work.appendingPathComponent("edited-\(UUID().uuidString).mov")
             try await PhotoLibrary.exportEdited(original, to: content, progress: progress)
         }
         update(id) {

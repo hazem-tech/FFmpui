@@ -41,12 +41,13 @@ build "$bin"
 "$bin" --encoders
 
 ext="${video##*.}"
-printf '\n%-28s %12s %8s\n' "Setting" "Bytes" "Seconds"
+printf '\n%-32s %12s %8s\n' "Setting" "Bytes" "Seconds"
 run() {
   local label="$1"; shift
   local out="$work/out.$ext" log
-  log=$("$bin" "$video" "$out" "$@" 2>&1) || { printf '%-28s %12s\n' "$label" "failed"; echo "$log" | tail -n 3; return; }
-  printf '%-28s %12s %8s\n' "$label" "$(wc -c < "$out" | tr -d ' ')" "$(echo "$log" | sed -n 's/^SECONDS=//p')"
+  log=$("$bin" "$video" "$out" "$@" 2>&1) || { printf '%-32s %12s\n' "$label" "failed"; echo "$log" | tail -n 3; return; }
+  printf '%-32s %12s %8s   %s\n' "$label" "$(wc -c < "$out" | tr -d ' ')" "$(echo "$log" | sed -n 's/^SECONDS=//p')" \
+    "$(echo "$log" | sed -n 's/^Encoder: .*lowest bitrate, //p; s/^Encoder: .*quality [0-9.]*, //p')"
   rm -f "$out"
 }
 run "app (Size + Speed)"
@@ -55,6 +56,11 @@ run "  with speed over quality" --prioritize-speed
 run "  keyframe every 2 s" --keyframes 2
 run "  keyframe every 60 s" --keyframes 60
 run "  constant quality 0" --quality 0
+run "  QP ≥ 51" --min-qp 51
+run "  QP ≥ 45" --min-qp 45
+run "  no adaptive QP" --no-adaptive-qp
+run "  QP ≥ 51, no adaptive QP" --min-qp 51 --no-adaptive-qp
+run "  QP ≥ 51, keyframe every 60 s" --min-qp 51 --keyframes 60
 run "  no 24 fps cap" --no-fps-cap
 run "  scale 0.5" --scale 0.5
 run "  scale 0.25" --scale 0.25

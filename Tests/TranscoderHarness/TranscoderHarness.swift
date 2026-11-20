@@ -13,6 +13,8 @@
 //    --quality <q>       constant quality 0…1 instead of the lowest bitrate
 //    --no-power-saving   don't ask for MaximizePowerEfficiency
 //    --prioritize-speed  ask for PrioritizeEncodingSpeedOverQuality
+//    --min-qp <n>        lowest quantizer allowed (MinAllowedFrameQP)
+//    --no-adaptive-qp    turn off SpatialAdaptiveQPLevel
 //    --copy-metadata     then copy the source's metadata with MetadataCopier
 //                        (what the iOS app does)
 //    --encoders          only list the HEVC encoders VideoToolbox has
@@ -32,7 +34,7 @@ struct TranscoderHarness {
         }
         guard args.count >= 2 else {
             print("usage: transcoder-harness <source> <output> [--scale f] [--no-fps-cap] [--keyframes s] "
-                + "[--quality q] [--no-power-saving] [--prioritize-speed] [--copy-metadata]")
+                + "[--quality q] [--no-power-saving] [--prioritize-speed] [--min-qp n] [--no-adaptive-qp] [--copy-metadata]")
             exit(2)
         }
         let source = URL(fileURLWithPath: args.removeFirst())
@@ -49,6 +51,8 @@ struct TranscoderHarness {
             case "--quality": settings.quality = Double(args.removeFirst())
             case "--no-power-saving": settings.powerEfficient = false
             case "--prioritize-speed": settings.prioritizeSpeed = true
+            case "--min-qp": settings.minFrameQP = Int(args.removeFirst())
+            case "--no-adaptive-qp": settings.adaptiveQP = false
             case "--copy-metadata": copyMetadata = true
             default:
                 print("Unknown option \(option)")

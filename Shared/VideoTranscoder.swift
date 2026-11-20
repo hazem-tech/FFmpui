@@ -57,6 +57,12 @@ nonisolated enum VideoTranscoder {
         /// Ask the encoder to favor speed over quality (experiment: at the
         /// lowest bitrate it can make *bigger* files, like faster x265 presets).
         var prioritizeSpeed = false
+        /// Lowest quantizer the encoder may use (51 = HEVC's coarsest), so
+        /// it can't spend bits the lowest bitrate doesn't ask for.
+        var minFrameQP: Int?
+        /// Let the encoder vary the quantizer within a frame (detail vs. flat
+        /// areas). Off saves bits when quality doesn't matter.
+        var adaptiveQP = true
 
         /// Both apps' "Size + Speed" mode.
         static func sizeAndSpeed(scale: Double) -> Settings {
@@ -392,6 +398,13 @@ nonisolated enum VideoTranscoder {
         }
         if settings.prioritizeSpeed {
             hints.append((kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality as String, true, "speed over quality"))
+        }
+        if let qp = settings.minFrameQP {
+            hints.append((kVTCompressionPropertyKey_MinAllowedFrameQP as String, qp, "QP ≥ \(qp)"))
+        }
+        if !settings.adaptiveQP {
+            hints.append((kVTCompressionPropertyKey_SpatialAdaptiveQPLevel as String,
+                          kVTQPModulationLevel_Disable, "no adaptive QP"))
         }
         var applied: [String] = []
         for hint in hints {

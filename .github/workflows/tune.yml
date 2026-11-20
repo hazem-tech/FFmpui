@@ -15,6 +15,11 @@ on:
       - Tests/run_transcoder.sh
       - .github/workflows/tune.yml
 
+# A newer push to the same branch replaces a run that is still going.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   variants:
     runs-on: ubuntu-latest
