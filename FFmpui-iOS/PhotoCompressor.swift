@@ -42,8 +42,6 @@ struct PhotoItem: Identifiable, Equatable {
 
 @Observable
 final class PhotoCompressor {
-    static let bitrate = VideoTranscoder.defaultBitrate
-
     var items: [PhotoItem] = []
     var replaceOriginals = false
     var highPriority = true
@@ -251,7 +249,7 @@ final class PhotoCompressor {
         try await VideoTranscoder.transcode(
             source: source,
             destination: output,
-            bitrate: Self.bitrate,
+            settings: .sizeAndSpeed(scale: 1),
             log: { line in Task { @MainActor in self.appendLog(line) } },
             progress: progress
         )

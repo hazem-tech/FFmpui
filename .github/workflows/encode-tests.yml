@@ -1,0 +1,107 @@
+name: Encode tests
+
+# Compresses the test clips (Tests/Fixtures + Tests/make_fixtures.sh) in every
+# mode and scale and checks each result with Tests/check_output.sh: size,
+# frame rate, rotation, bit-identical audio, metadata, file dates, HDR.
+# Each job adds its results table to the run summary.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    name: What the runner can do
+    runs-on: macos-26
+    steps:
+      - name: Install tools
+        run: brew install ffmpeg exiftool
+
+      - name: Report
+        run: |
+          {
+            echo "### Runner"
+            echo '```'
+            sysctl -n machdep.cpu.brand_string; sysctl -n hw.ncpu
+            sw_vers
+            ffmpeg -hide_banner -version | head -n1
+            echo "--- encoders"
+            ffmpeg -hide_banner -encoders 2>/dev/null | grep -E "hevc|265" || true
+            echo "--- libvmaf"
+            ffmpeg -hide_banner -filters 2>/dev/null | grep -E "vmaf" || echo "no libvmaf"
+            echo "--- hevc_videotoolbox options"
+            ffmpeg -hide_banner -h encoder=hevc_videotoolbox 2>/dev/null | grep -E "allow_sw|prio_speed|power_efficient|realtime" || true
+            echo "--- hevc_videotoolbox, hardware only"
+            if ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=1280x720:rate=30 -t 1 \
+                 -c:v hevc_videotoolbox -f null - 2>&1; then echo "hardware HEVC encoder: yes"; else echo "hardware HEVC encoder: no"; fi
+            echo "--- hevc_videotoolbox, software allowed"
+            if ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=1280x720:rate=30 -t 1 \
+                 -c:v hevc_videotoolbox -allow_sw 1 -f null - 2>&1; then echo "HEVC encoder with software fallback: yes"; else echo "no"; fi
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  script:
+    name: Script · ${{ matrix.mode }} · ${{ matrix.fixture }}
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [size, quality, speed]
+        fixture: [IMG_6758.mov, hlg60.mov, clip.mp4, film23.mov]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install tools
+        run: brew install ffmpeg exiftool
+
+      - name: Make test clips
+        run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"
+
+      - name: Compress and check
+        run: |
+          echo "### ${{ matrix.mode }} · ${{ matrix.fixture }}" >> "$GITHUB_STEP_SUMMARY"
+          Tests/run_tests.sh script ${{ matrix.mode }} "$RUNNER_TEMP/fixtures/${{ matrix.fixture }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  transcoder:
+    name: Shared encoder (iOS + Mac) · ${{ matrix.fixture }}
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        fixture: [IMG_6758.mov, hlg60.mov, clip.mp4, film23.mov]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select newest Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)
+          sudo xcode-select -s "$XCODE"
+          xcrun swiftc --version
+
+      - name: Install tools
+        run: brew install ffmpeg exiftool
+
+      - name: Build the harness
+        run: Tests/run_transcoder.sh --build "$RUNNER_TEMP/transcoder-harness"
+
+      - name: Make test clips
+        run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"
+
+      - name: Compress and check
+        run: |
+          {
+            echo "### Shared encoder · ${{ matrix.fixture }}"
+            echo '```'
+            "$RUNNER_TEMP/transcoder-harness" --encoders
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          Tests/run_tests.sh harness "$RUNNER_TEMP/transcoder-harness" "$RUNNER_TEMP/fixtures/${{ matrix.fixture }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+      - run: brew install shellcheck
+      - run: shellcheck FFmpui/compress_video.sh Tests/*.sh

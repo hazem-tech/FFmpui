@@ -41,7 +41,6 @@ final class VideoCompressor {
     /// Name ending of AVFoundation results, so they can sit next to
     /// ffmpeg's "_copy" files for comparison.
     static let avfoundationSuffix = "_copy_avf"
-    static let avfoundationBitrate = VideoTranscoder.defaultBitrate
 
     /// Folders where Homebrew / MacPorts install command line tools.
     /// GUI apps don't get the shell's PATH, so we look in these explicitly.
@@ -242,7 +241,7 @@ final class VideoCompressor {
             try await VideoTranscoder.transcode(
                 source: source,
                 destination: destination,
-                bitrate: Self.avfoundationBitrate,
+                settings: .sizeAndSpeed(scale: 1),
                 log: { line in Task { @MainActor in self.appendLog(line) } },
                 progress: { value in Task { @MainActor in self.update(id) { $0.progress = value } } }
             )

@@ -1,0 +1,49 @@
+name: Tune settings
+
+# Compares candidate encoder settings on the test clips (Tests/tune.sh):
+# Size mode by total bytes, Size + Quality by bytes at VMAF 95. Run it by
+# hand after changing the candidates; the winners go into compress_video.sh.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - Tests/tune.sh
+      - .github/workflows/tune.yml
+
+jobs:
+  variants:
+    runs-on: ubuntu-latest
+    outputs:
+      quality: ${{ steps.list.outputs.quality }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: list
+        run: echo "quality=$(Tests/tune.sh quality-variants | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
+
+  size:
+    name: Size mode
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+      - run: brew install ffmpeg exiftool
+      - run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"
+      - run: Tests/tune.sh size "$RUNNER_TEMP/fixtures" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  quality:
+    name: Quality · ${{ matrix.variant }}
+    needs: variants
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(needs.variants.outputs.quality) }}
+    steps:
+      - uses: actions/checkout@v5
+      - run: brew install ffmpeg exiftool
+      - run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"
+      - name: Bytes at VMAF 95
+        run: |
+          echo "| Variant | Preset | x265 | Bytes at VMAF 95 | Per clip | Seconds |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          Tests/tune.sh quality "$RUNNER_TEMP/fixtures" "${{ matrix.variant }}" | tee -a "$GITHUB_STEP_SUMMARY"
