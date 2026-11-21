@@ -70,13 +70,31 @@ run "  no 24 fps cap" --no-fps-cap
 run "  scale 0.5" --scale 0.5
 run "  scale 0.25" --scale 0.25
 
-# Keyframes again, alternating, 3 times each: speed differences are small,
-# so one run of each isn't enough to tell them apart.
+# Small speed differences need repeated, alternating runs: 6 rounds of 4
+# setups, then each setup's median time and size.
 echo
-echo "Keyframe settings, 3 runs each:"
-for i in 1 2 3; do
-  run "  every 10 s (run $i)" --keyframes 10
-  run "  single (run $i)"
-  run "  encoder's choice (run $i)" --keyframes auto
+echo "Repeated runs (6 rounds, alternating):"
+labels=("every 10 s" "single keyframe" "every 10 s + speed over quality" "single + speed over quality")
+options=("--keyframes 10" "--keyframes single" "--keyframes 10 --prioritize-speed" "--keyframes single --prioritize-speed")
+times=("" "" "" "")
+sizes=("" "" "" "")
+for round in 1 2 3 4 5 6; do
+  for i in 0 1 2 3; do
+    out="$work/out.$ext"
+    # shellcheck disable=SC2086 # options are word lists
+    log=$("$bin" "$video" "$out" ${options[$i]} 2>&1) || { echo "  ${labels[$i]}: failed"; continue; }
+    t=$(echo "$log" | sed -n 's/^SECONDS=//p')
+    b=$(wc -c < "$out" | tr -d ' ')
+    times[i]="${times[i]} $t"
+    sizes[i]="${sizes[i]} $b"
+    printf '  round %s  %-34s %10s bytes %6s s\n' "$round" "${labels[$i]}" "$b" "$t"
+    rm -f "$out"
+  done
+done
+median() { tr ' ' '\n' | grep -v '^$' | sort -n | awk '{ v[NR] = $1 } END { if (NR % 2) print v[(NR + 1) / 2]; else printf "%.2f\n", (v[NR / 2] + v[NR / 2 + 1]) / 2 }'; }
+echo
+printf '%-34s %14s %14s\n' "Median of 6" "Bytes" "Seconds"
+for i in 0 1 2 3; do
+  printf '%-34s %14s %14s\n' "${labels[$i]}" "$(echo "${sizes[$i]}" | median)" "$(echo "${times[$i]}" | median)"
 done
 "$bin" "$video" "$work/out.$ext" | grep '^Encoder:' || true

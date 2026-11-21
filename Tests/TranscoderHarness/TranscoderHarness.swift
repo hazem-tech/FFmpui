@@ -100,7 +100,7 @@ struct TranscoderHarness {
         let size = (try? output.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         let sourceSize = (try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         print(String(format: "Done in %.1f s: %@ → %@ bytes", seconds, "\(sourceSize)", "\(size)"))
-        print(String(format: "SECONDS=%.1f", seconds))
+        print(String(format: "SECONDS=%.2f", seconds))
     }
 
     /// Which HEVC encoders VideoToolbox offers, and whether they are hardware.
