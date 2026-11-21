@@ -41,6 +41,16 @@ nonisolated enum VideoTranscoder {
     }
 
     struct Settings: Sendable {
+        enum KeyFrames: Sendable, Equatable {
+            /// At most this many seconds apart.
+            case every(Double)
+            /// Only the first frame is a keyframe (the encoder may still add
+            /// one where that makes the file smaller, e.g. at a scene cut).
+            case single
+            /// No limit set: the encoder decides where to put them.
+            case encoderChoice
+        }
+
         /// Width and height factor (1, 0.5, 0.25), rounded down to even sizes.
         var scale: Double = 1
         /// Frames above this rate are dropped; nil keeps every frame.
@@ -51,9 +61,9 @@ nonisolated enum VideoTranscoder {
         /// alone: an encoder that ignored it would fall back to a high default
         /// bitrate, so the lowest bitrate and the quantizer floor stay too.
         var quality: Double? = 0
-        /// Seconds between keyframes. Keyframes are the biggest frames, so a
-        /// long interval keeps the file small; 10 s still seeks quickly.
-        var keyFrameInterval: Double = 10
+        /// Keyframes are the biggest frames, so fewer keep the file small;
+        /// 10 s still seeks quickly.
+        var keyFrames: KeyFrames = .every(10)
         /// Ask the encoder to use as little power as it can (less heat).
         var powerEfficient = true
         /// Ask the encoder to favor speed over quality (experiment: at the
@@ -355,7 +365,6 @@ nonisolated enum VideoTranscoder {
                 ? kVTProfileLevel_HEVC_Main10_AutoLevel as String
                 : kVTProfileLevel_HEVC_Main_AutoLevel as String,
             AVVideoAllowFrameReorderingKey: true,
-            AVVideoMaxKeyFrameIntervalDurationKey: settings.keyFrameInterval,
         ]
         if let bitrate = settings.bitrate {
             compression[AVVideoAverageBitRateKey] = bitrate
@@ -365,7 +374,18 @@ nonisolated enum VideoTranscoder {
         }
         if let outputRate {
             compression[AVVideoExpectedSourceFrameRateKey] = outputRate
-            compression[AVVideoMaxKeyFrameIntervalKey] = max(1, Int((outputRate * settings.keyFrameInterval).rounded()))
+        }
+        // "Single" is a 24-hour interval: no video is that long.
+        let keyFrameSeconds: Double? = switch settings.keyFrames {
+        case .every(let seconds): seconds
+        case .single: 86_400
+        case .encoderChoice: nil
+        }
+        if let keyFrameSeconds {
+            compression[AVVideoMaxKeyFrameIntervalDurationKey] = keyFrameSeconds
+            if let outputRate {
+                compression[AVVideoMaxKeyFrameIntervalKey] = max(1, Int((outputRate * keyFrameSeconds).rounded()))
+            }
         }
 
         var videoSettings: [String: Any] = [
@@ -441,7 +461,11 @@ nonisolated enum VideoTranscoder {
         }
         if settings.bitrate != nil { summary += ", lowest bitrate" }
         if let quality = settings.quality { summary += String(format: ", quality %.2f", quality) }
-        summary += String(format: ", keyframe every %.3g s", settings.keyFrameInterval)
+        switch settings.keyFrames {
+        case .every(let seconds): summary += String(format: ", keyframe every %.3g s", seconds)
+        case .single: summary += ", single keyframe"
+        case .encoderChoice: summary += ", keyframes where the encoder wants"
+        }
         if !applied.isEmpty { summary += ", " + applied.joined(separator: ", ") }
 
         return (Pair(output: output, input: input, isVideo: true, maxFrameRate: maxRate), summary)

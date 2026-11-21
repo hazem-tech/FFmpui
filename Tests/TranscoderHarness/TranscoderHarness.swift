@@ -9,7 +9,8 @@
 //  transcoder-harness <source> <output> [options]
 //    --scale <f>         1, 0.5 or 0.25 (default 1)
 //    --no-fps-cap        keep every frame (default: cap at 24 fps)
-//    --keyframes <s>     seconds between keyframes (default 10)
+//    --keyframes <k>     seconds between keyframes (default 10), "single"
+//                        (only the first frame) or "auto" (the encoder's choice)
 //    --quality <q>       constant quality 0…1 (default 0)
 //    --no-quality        don't ask for constant quality
 //    --no-bitrate        don't ask for the lowest bitrate
@@ -35,7 +36,7 @@ struct TranscoderHarness {
             return
         }
         guard args.count >= 2 else {
-            print("usage: transcoder-harness <source> <output> [--scale f] [--no-fps-cap] [--keyframes s] "
+            print("usage: transcoder-harness <source> <output> [--scale f] [--no-fps-cap] [--keyframes s|single|auto] "
                 + "[--quality q] [--no-power-saving] [--prioritize-speed] [--min-qp n] [--adaptive-qp] [--no-quality] [--no-bitrate] [--copy-metadata]")
             exit(2)
         }
@@ -49,7 +50,13 @@ struct TranscoderHarness {
             switch option {
             case "--scale": settings.scale = Double(args.removeFirst()) ?? 1
             case "--no-fps-cap": settings.maxFrameRate = nil
-            case "--keyframes": settings.keyFrameInterval = Double(args.removeFirst()) ?? 10
+            case "--keyframes":
+                let value = args.removeFirst()
+                switch value {
+                case "single": settings.keyFrames = .single
+                case "auto": settings.keyFrames = .encoderChoice
+                default: settings.keyFrames = .every(Double(value) ?? 10)
+                }
             case "--quality": settings.quality = Double(args.removeFirst())
             case "--no-quality": settings.quality = nil
             case "--no-bitrate": settings.bitrate = nil

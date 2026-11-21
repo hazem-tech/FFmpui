@@ -41,13 +41,17 @@ build "$bin"
 "$bin" --encoders
 
 ext="${video##*.}"
-printf '\n%-32s %12s %8s\n' "Setting" "Bytes" "Seconds"
+keyframes() {
+  command -v ffprobe >/dev/null 2>&1 || { echo "?"; return; }
+  ffprobe -v error -select_streams v:0 -skip_frame nokey -show_entries frame=pts_time -of csv=p=0 "$1" | wc -l | tr -d ' '
+}
+printf '\n%-32s %12s %8s %10s\n' "Setting" "Bytes" "Seconds" "Keyframes"
 run() {
   local label="$1"; shift
   local out="$work/out.$ext" log
   log=$("$bin" "$video" "$out" "$@" 2>&1) || { printf '%-32s %12s\n' "$label" "failed"; echo "$log" | tail -n 3; return; }
-  printf '%-32s %12s %8s   %s\n' "$label" "$(wc -c < "$out" | tr -d ' ')" "$(echo "$log" | sed -n 's/^SECONDS=//p')" \
-    "$(echo "$log" | sed -n 's/^Encoder: HEVC [^,]*, //p')"
+  printf '%-32s %12s %8s %10s   %s\n' "$label" "$(wc -c < "$out" | tr -d ' ')" "$(echo "$log" | sed -n 's/^SECONDS=//p')" \
+    "$(keyframes "$out")" "$(echo "$log" | sed -n 's/^Encoder: HEVC [^,]*, //p')"
   rm -f "$out"
 }
 run "app (Size + Speed)"
@@ -60,7 +64,19 @@ run "  without power saving" --no-power-saving
 run "  with speed over quality" --prioritize-speed
 run "  keyframe every 2 s" --keyframes 2
 run "  keyframe every 60 s" --keyframes 60
+run "  single keyframe" --keyframes single
+run "  keyframes: encoder's choice" --keyframes auto
 run "  no 24 fps cap" --no-fps-cap
 run "  scale 0.5" --scale 0.5
 run "  scale 0.25" --scale 0.25
+
+# Keyframes again, alternating, 3 times each: speed differences are small,
+# so one run of each isn't enough to tell them apart.
+echo
+echo "Keyframe settings, 3 runs each:"
+for i in 1 2 3; do
+  run "  every 10 s (run $i)"
+  run "  single (run $i)" --keyframes single
+  run "  encoder's choice (run $i)" --keyframes auto
+done
 "$bin" "$video" "$work/out.$ext" | grep '^Encoder:' || true

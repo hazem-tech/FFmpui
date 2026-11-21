@@ -98,13 +98,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        fixture: [IMG_6758.mov, hlg60.mov]
+        fixture: [IMG_6758.mov, hlg60.mov, long63.mov]
     steps:
       - uses: actions/checkout@v5
       - name: Select newest Xcode
         run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)"
       - run: brew install ffmpeg exiftool
       - run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"
+      # 63 s without cuts (the sample forward, then backward, 6 times), long
+      # enough for keyframe intervals to matter.
+      - name: Long test clip
+        if: matrix.fixture == 'long63.mov'
+        run: |
+          ffmpeg -nostdin -loglevel error -y -noautorotate -i Tests/Fixtures/IMG_6758.mov \
+            -filter_complex "[0:v]split[a][b];[b]reverse[r];[a][r]concat=n=2:v=1:a=0[v]" -map "[v]" \
+            -c:v libx264 -preset fast -crf 16 "$RUNNER_TEMP/pingpong.mp4"
+          ffmpeg -nostdin -loglevel error -y -stream_loop 5 -i "$RUNNER_TEMP/pingpong.mp4" -map 0:v \
+            -c:v libx264 -preset fast -crf 16 "$RUNNER_TEMP/fixtures/long63.mov"
+          ffprobe -v error -show_entries format=duration -of csv=p=0 "$RUNNER_TEMP/fixtures/long63.mov"
       - name: Variations
         run: |
           {
