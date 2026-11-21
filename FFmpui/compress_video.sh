@@ -286,9 +286,10 @@ plan_video() {
         # Same as the apps' Size + Speed: the hardware encoder (or Apple's
         # software one if there is none), quantizer never below 51 (the
         # lowest bitrate alone leaves it far above that), no adaptive
-        # quantization, power-saving.
+        # quantization, speed over quality, power-saving.
         VIDEO_ARGS+=(-allow_sw 1 -qmin 51)
         vt_has_option spatial_aq && VIDEO_ARGS+=(-spatial_aq 0)
+        vt_has_option prio_speed && VIDEO_ARGS+=(-prio_speed 1)
         vt_has_option power_efficient && VIDEO_ARGS+=(-power_efficient 1)
       fi
       ;;

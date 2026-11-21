@@ -61,7 +61,7 @@ run "  with adaptive QP" --adaptive-qp
 run "  QP ≥ 45" --min-qp 45
 run "  quality 0 alone" --no-bitrate --min-qp 0 --adaptive-qp
 run "  without power saving" --no-power-saving
-run "  with speed over quality" --prioritize-speed
+run "  without speed over quality" --no-prioritize-speed
 run "  keyframe every 2 s" --keyframes 2
 run "  keyframe every 60 s" --keyframes 60
 run "  keyframe every 10 s (before)" --keyframes 10
@@ -75,7 +75,7 @@ run "  scale 0.25" --scale 0.25
 echo
 echo "Repeated runs (6 rounds, alternating):"
 labels=("every 10 s" "single keyframe" "every 10 s + speed over quality" "single + speed over quality")
-options=("--keyframes 10" "--keyframes single" "--keyframes 10 --prioritize-speed" "--keyframes single --prioritize-speed")
+options=("--keyframes 10 --no-prioritize-speed" "--keyframes single --no-prioritize-speed" "--keyframes 10 --prioritize-speed" "--keyframes single --prioritize-speed")
 times=("" "" "" "")
 sizes=("" "" "" "")
 for round in 1 2 3 4 5 6; do

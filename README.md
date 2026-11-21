@@ -39,7 +39,7 @@ FFmpui compresses your videos to HEVC (H.265), as small as you want them. Unlike
 |---|---|---|---|
 | Goal | the smallest file the **hardware** encoder makes, quickly and without heating the device | looks like the original, in as few bytes as possible | the smallest file possible, whatever it looks like |
 | Where | Mac and iPhone (same code: [`Shared/VideoTranscoder.swift`](Shared/VideoTranscoder.swift)) | Mac | Mac |
-| Encoder | Apple's VideoToolbox HEVC (media engine): lowest bitrate and quality, quantizer never below 51, no adaptive quantization (Mac), one keyframe, power-saving | x265, 10-bit, `slower` preset, `aq-mode=4:sao=0:psy-rd=1.0` (16% fewer bytes than the usual settings for the same VMAF); for each video, the highest CRF that still scores **VMAF ≥ 95** against the original | x265 tuned for the floor (no SAO, 4×4 transforms, wide motion search, one keyframe…) |
+| Encoder | Apple's VideoToolbox HEVC (media engine): lowest bitrate and quality, quantizer never below 51, no adaptive quantization (Mac), one keyframe, speed over quality, power-saving | x265, 10-bit, `slower` preset, `aq-mode=4:sao=0:psy-rd=1.0` (16% fewer bytes than the usual settings for the same VMAF); for each video, the highest CRF that still scores **VMAF ≥ 95** against the original | x265 tuned for the floor (no SAO, 4×4 transforms, wide motion search, one keyframe…) |
 | Frame rate | capped at 24 fps | unchanged | capped at 24 fps |
 | Speed | fast | slow (a few test encodes per video, then the real one) | fast |
 
@@ -84,7 +84,7 @@ The engine is a plain shell script, [`FFmpui/compress_video.sh`](FFmpui/compress
 ./FFmpui/compress_video.sh --use-recording-date ~/Movies/Trip
 ```
 
-Run `./FFmpui/compress_video.sh --help` for all options. (On the command line, `speed` mode uses ffmpeg's `hevc_videotoolbox` with the same settings as the apps' AVFoundation encoder: 24 fps cap, lowest bitrate, quantizer never below 51, one keyframe, power-saving.)
+Run `./FFmpui/compress_video.sh --help` for all options. (On the command line, `speed` mode uses ffmpeg's `hevc_videotoolbox` with the same settings as the apps' AVFoundation encoder: 24 fps cap, lowest bitrate, quantizer never below 51, one keyframe, speed over quality, power-saving.)
 
 ## Tests
 

@@ -15,7 +15,8 @@
 //    --no-quality        don't ask for constant quality
 //    --no-bitrate        don't ask for the lowest bitrate
 //    --no-power-saving   don't ask for MaximizePowerEfficiency
-//    --prioritize-speed  ask for PrioritizeEncodingSpeedOverQuality
+//    --prioritize-speed  ask for PrioritizeEncodingSpeedOverQuality (default)
+//    --no-prioritize-speed  don't
 //    --min-qp <n>        lowest quantizer allowed (MinAllowedFrameQP; 0 = not set)
 //    --adaptive-qp       leave SpatialAdaptiveQPLevel on (default: off)
 //    --copy-metadata     then copy the source's metadata with MetadataCopier
@@ -62,6 +63,7 @@ struct TranscoderHarness {
             case "--no-bitrate": settings.bitrate = nil
             case "--no-power-saving": settings.powerEfficient = false
             case "--prioritize-speed": settings.prioritizeSpeed = true
+            case "--no-prioritize-speed": settings.prioritizeSpeed = false
             case "--min-qp": settings.minFrameQP = Int(args.removeFirst()).flatMap { $0 > 0 ? $0 : nil }
             case "--adaptive-qp": settings.adaptiveQP = true
             case "--copy-metadata": copyMetadata = true

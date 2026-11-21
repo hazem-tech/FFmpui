@@ -68,9 +68,9 @@ nonisolated enum VideoTranscoder {
         var keyFrames: KeyFrames = .single
         /// Ask the encoder to use as little power as it can (less heat).
         var powerEfficient = true
-        /// Ask the encoder to favor speed over quality (experiment: at the
-        /// lowest bitrate it can make *bigger* files, like faster x265 presets).
-        var prioritizeSpeed = false
+        /// Ask the encoder to favor speed over quality: less work per frame.
+        /// Size + Speed is about speed; the smallest file is Size mode's job.
+        var prioritizeSpeed = true
         /// Lowest quantizer the encoder may use (51 = HEVC's coarsest). The
         /// lowest bitrate alone leaves the hardware encoder well above it:
         /// this makes the video about 4× smaller (Tests/run_transcoder.sh).
