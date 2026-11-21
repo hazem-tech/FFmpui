@@ -42,6 +42,11 @@ prepare() {
 
 seconds_since() { echo $(( $(date +%s) - $1 )); }
 
+video_bytes() {
+  ffprobe -v error -select_streams V:0 -show_entries packet=size -of csv=p=0 "$1" 2>/dev/null | awk '{ s += $1 } END { print s + 0 }'
+}
+full_size_video=""
+
 for scale in "${scales[@]}"; do
   case "$kind" in
     script)
@@ -54,6 +59,16 @@ for scale in "${scales[@]}"; do
       fi
       grep -E '^(Quality|Note|Warning)' "$dir/log.txt" >&2 || true
       bash "$here/check_output.sh" "$dir/$base" "$dir/${name}_copy.$ext" "$mode" "$scale" "$(seconds_since "$start")" || failed=1
+      # Size mode: a smaller scale must never give more video bytes.
+      if [ "$mode" = "size" ] && [ -f "$dir/${name}_copy.$ext" ]; then
+        bytes=$(video_bytes "$dir/${name}_copy.$ext")
+        if [ "$scale" = "1" ]; then
+          full_size_video=$bytes
+        elif [ -n "$full_size_video" ] && [ "$bytes" -gt "$full_size_video" ]; then
+          echo "FAIL [$base, size, ${scale}x]: $bytes video bytes, more than at 1x ($full_size_video)" >&2
+          failed=1
+        fi
+      fi
       ;;
     harness)
       bin="$arg"

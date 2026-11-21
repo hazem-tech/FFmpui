@@ -5,8 +5,8 @@
 # tune.sh quality-variants                    list the quality candidates
 #
 # Size: runs compress_video.sh --mode size with each candidate (through the
-# FFMPUI_SIZE_* variables) on every fixture and adds up the video bytes.
-# Smallest total wins.
+# FFMPUI_SIZE_* variables) on every fixture at each scale and adds up the
+# video bytes. Smallest totals win.
 #
 # Quality: encodes each fixture at several CRFs with the candidate's x265
 # settings (10-bit, like quality mode), measures VMAF against the original,
@@ -20,25 +20,9 @@ here=$(cd "$(dirname "$0")" && pwd)
 script="$here/../FFmpui/compress_video.sh"
 target="${VMAF_TARGET:-95}"
 
-# name|preset|x265 params
-SIZE_VARIANTS=(
-  "app|veryfast|keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:min-cu-size=32:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1"
-  "app-faster|faster|keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:min-cu-size=32:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1"
-  "app-medium|medium|keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:min-cu-size=32:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1"
-  "simple|veryfast|keyint=-1:qpmin=51:aq-mode=0:sao=0:max-tu-size=4:cbqpoffs=12:crqpoffs=12"
-  "plain-crf51|medium|keyint=-1"
-)
-# Round 1 (bytes at VMAF 95 on the 3 clips): slower aq-mode 4 2,342,586;
-# aq-mode 2 2,476,544; aq-mode 3 + no SAO 2,559,483; aq-mode 3 + psy-rd 1
-# 2,578,079; veryslow aq-mode 3 2,663,685; slower aq-mode 3 2,687,569;
-# slow aq-mode 3 2,734,411. Round 2 builds on aq-mode 4:
-QUALITY_VARIANTS=(
-  "slower-aq4|slower|aq-mode=4"
-  "slower-aq4-nosao|slower|aq-mode=4:sao=0"
-  "slower-aq4-psy1|slower|aq-mode=4:psy-rd=1.0"
-  "slower-aq4-nosao-psy1|slower|aq-mode=4:sao=0:psy-rd=1.0"
-  "veryslow-aq4|veryslow|aq-mode=4"
-)
+# Candidates (name|preset|x265 params) live in Tests/tune/size.txt and
+# Tests/tune/quality.txt, so tune.yml can rerun just the sweep that changed.
+read_variants() { grep -v '^#' "$here/tune/$1.txt" | grep -v '^[[:space:]]*$'; }
 QUALITY_CRFS=(18 21 24 27 30)
 
 video_bytes() {
@@ -55,35 +39,38 @@ fixtures() { find "$1" -maxdepth 1 -type f \( -name '*.mov' -o -name '*.mp4' \) 
 
 case "${1:-}" in
   quality-variants)
-    for v in "${QUALITY_VARIANTS[@]}"; do echo "${v%%|*}"; done
+    read_variants quality | cut -d'|' -f1
     ;;
 
   size)
     dir="${2:?fixtures dir}"
     work=$(mktemp -d "${TMPDIR:-/tmp}/ffmpui-tune.XXXXXX")
     trap 'rm -rf "$work"' EXIT
-    echo "| Size setting | Preset | Video bytes (all fixtures) | Seconds |"
-    echo "|---|---|---|---|"
-    for v in "${SIZE_VARIANTS[@]}"; do
-      IFS='|' read -r name preset params <<< "$v"
-      total=0; start=$(date +%s)
-      while IFS= read -r f; do
-        d="$work/$name"; mkdir -p "$d"; cp -p "$f" "$d/"
-        b=$(basename "$f")
-        FFMPUI_SIZE_PRESET="$preset" FFMPUI_SIZE_X265="$params" \
-          bash "$script" --mode size "$d/$b" >/dev/null 2>&1
-        out="$d/${b%.*}_copy.${b##*.}"
-        [ -f "$out" ] && total=$((total + $(video_bytes "$out")))
-        rm -f "$d"/*
-      done < <(fixtures "$dir")
-      echo "| $name | $preset | $total | $(( $(date +%s) - start )) |"
-    done
+    scales=(1 0.5 0.25)
+    echo "| Size setting | Preset | Video bytes at 1× | 0.5× | 0.25× | Seconds |"
+    echo "|---|---|---|---|---|---|"
+    while IFS='|' read -r name preset params; do
+      row="| $name | $preset |"; start=$(date +%s)
+      for scale in "${scales[@]}"; do
+        total=0
+        while IFS= read -r f; do
+          d="$work/$name-$scale"; mkdir -p "$d"; cp -p "$f" "$d/"
+          b=$(basename "$f")
+          FFMPUI_SIZE_PRESET="$preset" FFMPUI_SIZE_X265="$params" \
+            bash "$script" --mode size --scale "$scale" "$d/$b" >/dev/null 2>&1 < /dev/null
+          out="$d/${b%.*}_copy.${b##*.}"
+          [ -f "$out" ] && total=$((total + $(video_bytes "$out")))
+          rm -f "$d"/*
+        done < <(fixtures "$dir")
+        row+=" $total |"
+      done
+      echo "$row $(( $(date +%s) - start )) |"
+    done < <(read_variants size)
     ;;
 
   quality)
     dir="${2:?fixtures dir}"; want="${3:?variant}"
-    line=""
-    for v in "${QUALITY_VARIANTS[@]}"; do [ "${v%%|*}" = "$want" ] && line="$v"; done
+    line=$(read_variants quality | grep "^$want|" | head -n1)
     [ -n "$line" ] || { echo "Unknown variant $want" >&2; exit 2; }
     IFS='|' read -r name preset params <<< "$line"
     work=$(mktemp -d "${TMPDIR:-/tmp}/ffmpui-tune.XXXXXX")

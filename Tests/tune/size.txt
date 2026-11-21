@@ -1,0 +1,13 @@
+# Size mode candidates: name|x265 preset|x265 params (always with -crf 51).
+# Tests/tune.sh size adds up the video bytes over the test clips at each scale.
+app|veryfast|keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:min-cu-size=32:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1
+no-merange|veryfast|keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:min-cu-size=32:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1
+no-min-cu|veryfast|keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1
+no-rskip|veryfast|keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:min-cu-size=32:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:max-merge=1
+no-max-merge|veryfast|keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:min-cu-size=32:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2
+no-max-tu|veryfast|keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:min-cu-size=32:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1
+no-umh|veryfast|keyint=-1:qpmin=51:aq-mode=0:sao=0:merange=200:min-cu-size=32:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1
+no-lookahead|veryfast|keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:min-cu-size=32:max-tu-size=4:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1
+no-chroma-offset|veryfast|keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:min-cu-size=32:max-tu-size=4:rc-lookahead=5:rskip=2:max-merge=1
+simple|veryfast|keyint=-1:qpmin=51:aq-mode=0:sao=0:max-tu-size=4:cbqpoffs=12:crqpoffs=12
+plain-crf51|medium|keyint=-1
