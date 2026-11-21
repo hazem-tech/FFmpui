@@ -199,10 +199,12 @@ SIZE_PRESET="${FFMPUI_SIZE_PRESET:-veryfast}"
 SIZE_CRF="${FFMPUI_SIZE_CRF:-51}"
 SIZE_X265="${FFMPUI_SIZE_X265:-keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:min-cu-size=32:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1}"
 # quality: 10-bit x265 at the slower preset; the CRF is picked per video
-# (below). aq-mode 4 needs ~13% fewer bytes than aq-mode 3 for the same VMAF
-# (Tests/tune.sh). (The FFMPUI_* environment variables are for tune.sh.)
+# (below). Chosen with Tests/tune.sh (bytes needed for VMAF 95 on the test
+# clips): aq-mode 4 + no SAO + psy-rd 1.0 needs 16% fewer bytes than the
+# usual aq-mode 3; veryslow saves under 1% more for about twice the time.
+# (The FFMPUI_* environment variables are for tune.sh.)
 QUALITY_PRESET="${FFMPUI_QUALITY_PRESET:-slower}"
-QUALITY_X265="${FFMPUI_QUALITY_X265:-aq-mode=4}"
+QUALITY_X265="${FFMPUI_QUALITY_X265:-aq-mode=4:sao=0:psy-rd=1.0}"
 QUALITY_CRF_MIN=14
 QUALITY_CRF_MAX=36
 QUALITY_CRF_FALLBACK=22     # used when ffmpeg has no libvmaf
