@@ -7,7 +7,9 @@ name: Encode tests
 
 on:
   push:
+    paths-ignore: [README.md]
   pull_request:
+    paths-ignore: [README.md]
   workflow_dispatch:
 
 # A newer push to the same branch replaces a run that is still going.
