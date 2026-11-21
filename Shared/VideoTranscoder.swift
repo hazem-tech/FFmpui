@@ -61,9 +61,11 @@ nonisolated enum VideoTranscoder {
         /// alone: an encoder that ignored it would fall back to a high default
         /// bitrate, so the lowest bitrate and the quantizer floor stay too.
         var quality: Double? = 0
-        /// Keyframes are the biggest frames, so fewer keep the file small;
-        /// 10 s still seeks quickly.
-        var keyFrames: KeyFrames = .every(10)
+        /// Keyframes are the biggest frames, so fewer keep the file small.
+        /// A single one: on a 63 s clip, 0.1–0.3% smaller than one every
+        /// 10 s at the same speed (jumping around in long videos takes a
+        /// moment longer).
+        var keyFrames: KeyFrames = .single
         /// Ask the encoder to use as little power as it can (less heat).
         var powerEfficient = true
         /// Ask the encoder to favor speed over quality (experiment: at the

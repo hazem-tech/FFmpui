@@ -64,7 +64,7 @@ run "  without power saving" --no-power-saving
 run "  with speed over quality" --prioritize-speed
 run "  keyframe every 2 s" --keyframes 2
 run "  keyframe every 60 s" --keyframes 60
-run "  single keyframe" --keyframes single
+run "  keyframe every 10 s (before)" --keyframes 10
 run "  keyframes: encoder's choice" --keyframes auto
 run "  no 24 fps cap" --no-fps-cap
 run "  scale 0.5" --scale 0.5
@@ -75,8 +75,8 @@ run "  scale 0.25" --scale 0.25
 echo
 echo "Keyframe settings, 3 runs each:"
 for i in 1 2 3; do
-  run "  every 10 s (run $i)"
-  run "  single (run $i)" --keyframes single
+  run "  every 10 s (run $i)" --keyframes 10
+  run "  single (run $i)"
   run "  encoder's choice (run $i)" --keyframes auto
 done
 "$bin" "$video" "$work/out.$ext" | grep '^Encoder:' || true

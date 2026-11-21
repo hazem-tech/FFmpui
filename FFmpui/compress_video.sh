@@ -187,7 +187,7 @@ run_ffmpeg() {
 # Encoding settings per mode. Audio is never re-encoded in any mode.
 
 FPS_CAP=24                  # speed / size: frame rate limit (lower rates are kept)
-SPEED_KEYFRAME_SECONDS=10   # speed: one keyframe every 10 s (ffmpeg's default is every 12 frames)
+SPEED_KEYFRAME_SECONDS=86400  # speed: a single keyframe (ffmpeg's default is every 12 frames)
 QUALITY_KEYFRAME_SECONDS=10
 X265_QUIET="log-level=error"
 # size: the smallest file x265 can make. Found by searching x265's options on
