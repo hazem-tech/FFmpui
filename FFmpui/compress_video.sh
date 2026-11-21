@@ -355,7 +355,9 @@ vmaf_at() {
   run_ffmpeg -nostdin -hide_banner -loglevel error -y "${SAMPLE_ARGS[@]}" \
       -filter_complex "$(sample_graph 0 v)" -map '[v]' -an \
       "${VIDEO_ARGS[@]}" -crf "$crf" "$probe" >/dev/null 2>"$SEARCH_DIR/encode.log" || return 1
-  run_ffmpeg -nostdin -hide_banner -loglevel info -i "$probe" "${SAMPLE_ARGS[@]}" \
+  # -noautorotate: the test encode carries the rotation flag too, and both
+  # sides must stay unrotated to be compared.
+  run_ffmpeg -nostdin -hide_banner -loglevel info -noautorotate -i "$probe" "${SAMPLE_ARGS[@]}" \
       -filter_complex "[0:v]settb=1/1000,setpts=N*40[d];$(sample_graph 1 s);[s]format=yuv420p10le,settb=1/1000,setpts=N*40[r];[d][r]libvmaf=n_threads=$(cpu_count)" \
       -f null - >/dev/null 2>"$SEARCH_DIR/vmaf.log" || return 1
   VMAF_SCORE=$(sed -n 's/.*VMAF score: *\([0-9.]*\).*/\1/p' "$SEARCH_DIR/vmaf.log" | tail -n1)
@@ -381,8 +383,9 @@ pick_quality_crf() {
     mid=$(( (lo + hi + 1) / 2 ))
     echo "@@PHASE Finding the best quality setting (trying CRF $mid)"
     if ! vmaf_at "$mid"; then
-      echo "Note: the quality search failed for '$name'; using CRF $QUALITY_CRF_FALLBACK." >&2
-      sed -n '1,5p' "$SEARCH_DIR/encode.log" "$SEARCH_DIR/vmaf.log" >&2 2>/dev/null
+      local why
+      why=$(cat "$SEARCH_DIR/encode.log" "$SEARCH_DIR/vmaf.log" 2>/dev/null | grep -iE 'error|invalid|fail|mismatch' | tail -n1)
+      echo "Note: the quality search failed for '$name' (${why:-no details}); using CRF $QUALITY_CRF_FALLBACK." >&2
       rm -rf "$SEARCH_DIR"; SEARCH_DIR=""
       return
     fi

@@ -23,6 +23,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+# bash with pipefail, so "… | tee" steps fail when the tests do.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   # What to run: everything when started by hand; on a push, only the parts
   # whose files changed (x265 sweeps: Tests/tune.sh; Size + Speed: the shared

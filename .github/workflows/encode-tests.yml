@@ -15,6 +15,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# bash with pipefail, so "… | tee" steps fail when the tests do.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   probe:
     name: What the runner can do
