@@ -191,13 +191,15 @@ SPEED_KEYFRAME_SECONDS=10   # speed: one keyframe every 10 s (ffmpeg's default i
 QUALITY_KEYFRAME_SECONDS=10
 X265_QUIET="log-level=error"
 # size: the smallest file x265 can make. Found by searching x265's options on
-# real iPhone footage (Tests/tune.sh): no SAO, 4×4 transforms only, big CUs,
-# wide motion search, chroma at the highest quantizer and a single keyframe.
-# This gives less than half the bytes of plain "-crf 51" (slower presets give
-# *bigger* files at this quantizer), and it is quick.
+# real iPhone footage (Tests/tune.sh, Tests/tune/size.txt): no SAO, 4×4
+# transforms only, wide motion search, chroma at the highest quantizer and a
+# single keyframe. This gives under a third of the bytes of plain "-crf 51"
+# at every scale (slower presets give *bigger* files at this quantizer), and
+# it is quick. (min-cu-size=32 was dropped: with x265 4.3 it tripled the
+# size at 640×360.)
 SIZE_PRESET="${FFMPUI_SIZE_PRESET:-veryfast}"
 SIZE_CRF="${FFMPUI_SIZE_CRF:-51}"
-SIZE_X265="${FFMPUI_SIZE_X265:-keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:min-cu-size=32:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1}"
+SIZE_X265="${FFMPUI_SIZE_X265:-keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1}"
 # quality: 10-bit x265 at the slower preset; the CRF is picked per video
 # (below). Chosen with Tests/tune.sh (bytes needed for VMAF 95 on the test
 # clips): aq-mode 4 + no SAO + psy-rd 1.0 needs 16% fewer bytes than the

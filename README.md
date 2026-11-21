@@ -39,7 +39,7 @@ FFmpui compresses your videos to HEVC (H.265), as small as you want them. Unlike
 |---|---|---|---|
 | Goal | the smallest file the **hardware** encoder makes, quickly and without heating the device | looks like the original, in as few bytes as possible | the smallest file possible, whatever it looks like |
 | Where | Mac and iPhone (same code: [`Shared/VideoTranscoder.swift`](Shared/VideoTranscoder.swift)) | Mac | Mac |
-| Encoder | Apple's VideoToolbox HEVC (media engine): lowest bitrate and quality, quantizer never below 51, no adaptive quantization (Mac), power-saving | x265, 10-bit, `slower` preset, `aq-mode=4:sao=0:psy-rd=1.0` (16% fewer bytes than the usual settings for the same VMAF); for each video, the highest CRF that still scores **VMAF ≥ 95** against the original | x265 tuned for the floor (no SAO, 4×4 transforms, big blocks, one keyframe…) |
+| Encoder | Apple's VideoToolbox HEVC (media engine): lowest bitrate and quality, quantizer never below 51, no adaptive quantization (Mac), power-saving | x265, 10-bit, `slower` preset, `aq-mode=4:sao=0:psy-rd=1.0` (16% fewer bytes than the usual settings for the same VMAF); for each video, the highest CRF that still scores **VMAF ≥ 95** against the original | x265 tuned for the floor (no SAO, 4×4 transforms, wide motion search, one keyframe…) |
 | Frame rate | capped at 24 fps | unchanged | capped at 24 fps |
 | Speed | fast | slow (a few test encodes per video, then the real one) | fast |
 
