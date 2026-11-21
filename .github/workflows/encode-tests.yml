@@ -42,14 +42,6 @@ jobs:
             ffmpeg -hide_banner -encoders 2>/dev/null | grep -E "hevc|265" || true
             echo "--- libvmaf"
             ffmpeg -hide_banner -filters 2>/dev/null | grep -E "vmaf" || echo "no libvmaf"
-            echo "--- hevc_videotoolbox options"
-            ffmpeg -hide_banner -h encoder=hevc_videotoolbox 2>/dev/null | grep -E "allow_sw|prio_speed|power_efficient|realtime|spatial_aq|qmin" || true
-            echo "--- hevc_videotoolbox, hardware only"
-            if ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=1280x720:rate=30 -t 1 \
-                 -c:v hevc_videotoolbox -f null - 2>&1; then echo "hardware HEVC encoder: yes"; else echo "hardware HEVC encoder: no"; fi
-            echo "--- hevc_videotoolbox, software allowed"
-            if ffmpeg -hide_banner -loglevel error -f lavfi -i testsrc2=size=1280x720:rate=30 -t 1 \
-                 -c:v hevc_videotoolbox -allow_sw 1 -f null - 2>&1; then echo "HEVC encoder with software fallback: yes"; else echo "no"; fi
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -59,7 +51,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [size, quality, speed]
+        mode: [size, quality]
         fixture: [IMG_6758.mov, hlg60.mov, clip.mp4, film23.mov]
     steps:
       - uses: actions/checkout@v5

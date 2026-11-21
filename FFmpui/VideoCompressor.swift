@@ -64,7 +64,8 @@ final class VideoCompressor {
             }
         }
 
-        /// compress_video.sh's `--mode`.
+        /// compress_video.sh's `--mode` (Size + Speed is encoded by the app
+        /// itself and handed over with `--encoded`).
         var scriptMode: String {
             switch self {
             case .sizeAndSpeed: "speed"

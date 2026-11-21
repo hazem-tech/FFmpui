@@ -44,7 +44,7 @@ FFmpui compresses your videos to HEVC (H.265), as small as you want them. Unlike
 | Speed | fast | slow (a few test encodes per video, then the real one) | fast |
 
 - Videos at 24 fps or less keep their frame rate. HDR (HLG / PQ) videos stay 10-bit HDR in every mode (iPhone's extra Dolby Vision data isn't kept, as before).
-- **High priority** (Mac, x265 modes only): on, x265 uses all of the Mac's power, as fast as in Terminal; off, it runs on the efficiency cores only, so the Mac stays cool and quiet but compressing takes much longer. It isn't shown for Size + Speed: the hardware encoder runs in a system process at its own pace, so priority makes no difference there (that's also why the iPhone app has no such switch).
+- **High priority** (Mac, x265 modes only): on, x265 uses all of the Mac's power; off, it runs on the efficiency cores only, so the Mac stays cool and quiet but compressing takes much longer. It isn't shown for Size + Speed: the hardware encoder runs in a system process at its own pace, so priority makes no difference there (that's also why the iPhone app has no such switch).
 - Size and Size + Speed use a single keyframe, so jumping around in a long video takes a moment longer.
 - **How small?** On the sample iPhone clip (720p, 30 fps, 10.6 Mb/s, 7.1 MB), Size mode gives about 12 kb/s of video (less than a third of plain `-crf 51`) and Size + Speed about 100 kb/s (the hardware encoder's lowest bitrate alone gave about 460 kb/s); Size + Quality picks CRF 28 there, about 620 kb/s at VMAF 95. At these sizes the untouched audio is usually the biggest part of the file.
 
@@ -66,26 +66,6 @@ The `FFmpui-iOS` target compresses videos from your **Photos library** on iPhone
 - It keeps running in the background, with progress shown by iOS, and the screen stays on while the app is open.
 - It needs **full** Photos access, and enough free space for a temporary copy of the original (and of its edited version) plus the compressed file.
 
-## Command line
-
-The engine is a plain shell script, [`FFmpui/compress_video.sh`](FFmpui/compress_video.sh), which also works on its own:
-
-```bash
-# Size + Speed with ffmpeg's VideoToolbox encoder; keep originals, write *_copy files
-./FFmpui/compress_video.sh "/Volumes/NVMe Cross/only bit rate"
-
-# smallest possible files at half the width and height, replacing the originals
-./FFmpui/compress_video.sh --mode size --scale 0.5 --replace clip1.MOV clip2.MP4
-
-# looks like the original (VMAF 95; use --vmaf to change the target)
-./FFmpui/compress_video.sh --mode quality ~/Movies/Trip
-
-# set file dates to the recording date instead of copying the original file's dates
-./FFmpui/compress_video.sh --use-recording-date ~/Movies/Trip
-```
-
-Run `./FFmpui/compress_video.sh --help` for all options. (On the command line, `speed` mode uses ffmpeg's `hevc_videotoolbox` with the same settings as the apps' AVFoundation encoder: 24 fps cap, lowest bitrate, quantizer never below 51, one keyframe, speed over quality, power-saving.)
-
 ## Tests
 
 Everything runs on GitHub Actions' Apple Silicon Macs on every push ([`encode-tests.yml`](.github/workflows/encode-tests.yml)):
@@ -97,7 +77,7 @@ Everything runs on GitHub Actions' Apple Silicon Macs on every push ([`encode-te
   - the **audio is bit-identical** to the source
   - Make, Model, creation date, GPS and file dates are kept, and HDR stays HDR
   - Size + Quality reaches its VMAF target
-- The apps' shared encoder is built as a command-line tool ([`Tests/TranscoderHarness`](Tests/TranscoderHarness)) and tested both ways: the iPhone path (MetadataCopier) and the Mac path (`compress_video.sh --encoded`).
+- The apps' shared encoder is built as a command-line tool ([`Tests/TranscoderHarness`](Tests/TranscoderHarness)) and tested both ways: the iPhone path (MetadataCopier) and the Mac path (the app's engine, [`FFmpui/compress_video.sh`](FFmpui/compress_video.sh), which also checks the file and copies the metadata).
 - Each run's summary has a table of sizes, frame rates and VMAF scores.
 
 Settings were picked with [`tune.yml`](.github/workflows/tune.yml) (run it from the Actions tab): [`Tests/tune.sh`](Tests/tune.sh) compares x265 settings for Size (total bytes) and Size + Quality (bytes at VMAF 95), and [`Tests/run_transcoder.sh`](Tests/run_transcoder.sh) compares Size + Speed variations on the runner's hardware encoder.

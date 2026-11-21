@@ -1,69 +1,49 @@
 #!/usr/bin/env bash
 #
-# compress_video.sh — FFmpui's compression engine.
+# compress_video.sh — the FFmpui Mac app's engine (run by the app, one video
+# at a time). It:
 #
-# Re-encodes videos to HEVC and carries over *everything* from the original
-# that can be carried over:
+#   1. encodes the video (Size and Size + Quality modes, with x265), or takes
+#      the file the app already encoded (Size + Speed)
+#   2. checks the result opens and is just as long
+#   3. carries over *everything* from the original that can be carried over:
+#      • every audio track (untouched), timecode, GoPro/DJI telemetry and
+#        other data tracks
+#      • camera make / model / serial, lens make / model, focal length, ISO,
+#        aperture, shutter, GPS location, Apple "Keys" tags (Live Photo IDs,
+#        software, location, creation date with time zone, …), XMP, UserData
+#      • the QuickTime internal dates (movie / track / media create & modify)
+#      • the rotation flag (pixels are NOT rotated, so nothing is rotated twice)
+#      • the macOS file dates (created + modified), Finder tags / extended
+#        attributes, and file permissions
+#   4. moves it into place
 #
-#   • every audio track, timecode, GoPro/DJI telemetry and other data tracks
-#   • camera make / model / serial, lens make / model, focal length, ISO,
-#     aperture, shutter, GPS location, Apple "Keys" tags (Live Photo IDs,
-#     software, location, creation date with time zone, …), XMP, UserData
-#   • the QuickTime internal dates (movie / track / media create & modify)
-#   • the rotation flag (pixels are NOT rotated, so nothing is rotated twice)
-#   • the macOS file dates (created + modified), Finder tags / extended
-#     attributes, and file permissions
+# How the app calls it:
+#   compress_video.sh [--replace] --mode size|quality [--scale <f>] -- <video>
+#   compress_video.sh [--replace] --encoded <file> -- <video>
 #
-# Usage:
-#   compress_video.sh [options] <file-or-folder>...
+#   --mode size       x265: the smallest file possible, whatever it looks like;
+#                     frame rate capped at 24
+#   --mode quality    x265, 10-bit: for each video, the smallest file that still
+#                     scores VMAF 95 against the original; same frame rate. Slow.
+#   --scale <f>       width and height factor: 1 (default), 0.5 or 0.25
+#   --encoded <file>  <file> was already encoded by the app from <video> (Size +
+#                     Speed). It is checked, gets all the metadata / file
+#                     attributes, and is moved into place (deleted if anything
+#                     fails).
+#   --replace         overwrite the original (default: keep it and write
+#                     "<name>_copy.<ext>" next to it)
 #
-# Options:
-#   --mode <mode>         What to optimize for (default: speed):
-#                           speed    smallest file the hardware encoder
-#                                    (hevc_videotoolbox) can make, quickly and
-#                                    without much heat; frame rate capped at 24
-#                           quality  x265 (10-bit): for each video, the
-#                                    smallest file that still looks like the
-#                                    original (VMAF target, see --vmaf); same
-#                                    frame rate. Slow.
-#                           size     x265: the smallest file possible, whatever
-#                                    it looks like; frame rate capped at 24
-#   --scale <factor>      Width and height factor: 1 (default), 0.5 or 0.25.
-#   --vmaf <score>        Quality mode's target VMAF score (default: 95).
-#   --replace             Replace the original file (default: keep the original
-#                         and write "<name>_copy.<ext>" next to it).
-#   --use-recording-date  Set the file's created/modified date to the date the
-#                         clip was recorded instead of copying the original
-#                         file's dates.
-#   --bitrate <value>     Speed mode: video bitrate passed to ffmpeg (default:
-#                         1, i.e. the lowest the encoder allows).
-#   --encoder <name>      Speed mode: video encoder (default: hevc_videotoolbox).
-#   --suffix <text>       Name ending for the kept-originals output
-#                         (default: _copy, giving "<name>_copy.<ext>").
-#   --encoded <file>      Skip the ffmpeg step: <file> was already encoded
-#                         (e.g. by the app's AVFoundation encoder) from the
-#                         single input given. It is checked, gets all the
-#                         metadata / file attributes, and is moved into place
-#                         (it is deleted if anything fails).
-#   -h, --help            Show this help.
+# Requires: ffmpeg, ffprobe, exiftool (brew install ffmpeg exiftool). Quality
+# mode uses ffmpeg's libvmaf (included in Homebrew's ffmpeg); without it, a
+# fixed quality setting is used.
 #
-# Audio is always copied untouched, in every mode.
-#
-# Folders are searched recursively for .mp4 / .mov / .m4v files.
-# Files that already end in "_copy" or "_copy_avf" are skipped when scanning
-# a folder.
-#
-# Requires: ffmpeg, ffprobe, exiftool (brew install ffmpeg exiftool).
-# Quality mode uses ffmpeg's libvmaf (included in Homebrew's ffmpeg); without
-# it, a fixed quality setting is used.
-#
-# Machine-readable lines (used by the FFmpui app) start with "@@":
+# Lines for the app start with "@@":
 #   @@FILE_START <path>
 #   @@DURATION <seconds>
 #   @@PHASE <text>            what the script is doing (e.g. the quality search)
 #   @@FILE_DONE <input-bytes> <output-bytes> <output-path>
 #   @@FILE_FAIL <reason>
-#   @@FILE_SKIP <reason>
 # ffmpeg's own "-progress" lines (out_time_us=…) are also printed to stdout.
 
 set -uo pipefail
@@ -71,16 +51,13 @@ set -uo pipefail
 # GUI apps don't inherit the shell PATH, so add the usual Homebrew/MacPorts dirs.
 export PATH="/opt/homebrew/bin:/usr/local/bin:/opt/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
 
-MODE="speed"
+MODE=""
 SCALE="1"
-VMAF_TARGET="95"
 REPLACE=0
-USE_RECORDING_DATE=0
-BITRATE="1"
-ENCODER="hevc_videotoolbox"
-SUFFIX="_copy"
 ENCODED=""
 INPUTS=()
+SUFFIX="_copy"
+VMAF_TARGET=95
 
 usage() { sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; }
 
@@ -88,12 +65,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --mode) shift; MODE="${1:?--mode needs a value}" ;;
     --scale) shift; SCALE="${1:?--scale needs a value}" ;;
-    --vmaf) shift; VMAF_TARGET="${1:?--vmaf needs a value}" ;;
     --replace) REPLACE=1 ;;
-    --use-recording-date) USE_RECORDING_DATE=1 ;;
-    --bitrate) shift; BITRATE="${1:?--bitrate needs a value}" ;;
-    --encoder) shift; ENCODER="${1:?--encoder needs a value}" ;;
-    --suffix) shift; SUFFIX="${1:?--suffix needs a value}" ;;
     --encoded) shift; ENCODED="${1:?--encoded needs a file}" ;;
     -h|--help) usage; exit 0 ;;
     --) shift; INPUTS+=("$@"); break ;;
@@ -103,35 +75,26 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-if [ ${#INPUTS[@]} -eq 0 ]; then
+if [ ${#INPUTS[@]} -ne 1 ]; then
+  echo "Give exactly one video." >&2
   usage >&2
+  [ -n "$ENCODED" ] && rm -f "$ENCODED"
   exit 2
 fi
-
-case "$MODE" in
-  speed|quality|size) ;;
-  *) echo "Unknown --mode '$MODE' (use speed, quality or size)" >&2; exit 2 ;;
-esac
+if [ -z "$ENCODED" ]; then
+  case "$MODE" in
+    size|quality) ;;
+    *) echo "Use --mode size or --mode quality, or --encoded <file>." >&2; exit 2 ;;
+  esac
+fi
 if ! awk -v s="$SCALE" 'BEGIN { exit !(s + 0 > 0 && s + 0 <= 1) }'; then
   echo "--scale must be a number above 0 and at most 1 (e.g. 1, 0.5, 0.25)" >&2
   exit 2
 fi
-if ! awk -v v="$VMAF_TARGET" 'BEGIN { exit !(v + 0 > 0 && v + 0 <= 100) }'; then
-  echo "--vmaf must be a score between 0 and 100" >&2
-  exit 2
-fi
-
-if [ -n "$ENCODED" ]; then
-  if [ ${#INPUTS[@]} -ne 1 ] || [ ! -f "${INPUTS[0]}" ]; then
-    echo "--encoded needs exactly one input file" >&2
-    rm -f "$ENCODED"
-    exit 2
-  fi
-  if [ ! -f "$ENCODED" ]; then
-    echo "@@FILE_START ${INPUTS[0]}"
-    echo "@@FILE_FAIL Encoded file not found"
-    exit 1
-  fi
+if [ -n "$ENCODED" ] && [ ! -f "$ENCODED" ]; then
+  echo "@@FILE_START ${INPUTS[0]}"
+  echo "@@FILE_FAIL Encoded file not found"
+  exit 1
 fi
 
 for tool in ffmpeg ffprobe exiftool; do
@@ -160,13 +123,6 @@ trap 'echo "Stopped." >&2; exit 143' INT TERM
 
 EXIFTOOL=(exiftool -q -q -m -api LargeFileSupport=1 -api QuickTimeUTC=1)
 
-is_video() {
-  case "$(printf '%s' "${1##*.}" | tr '[:upper:]' '[:lower:]')" in
-    mp4|mov|m4v) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
 file_size() { wc -c < "$1" | tr -d ' '; }
 
 probe_duration() {
@@ -186,8 +142,7 @@ run_ffmpeg() {
 # ---------------------------------------------------------------------------
 # Encoding settings per mode. Audio is never re-encoded in any mode.
 
-FPS_CAP=24                  # speed / size: frame rate limit (lower rates are kept)
-SPEED_KEYFRAME_SECONDS=86400  # speed: a single keyframe (ffmpeg's default is every 12 frames)
+FPS_CAP=24                  # size: frame rate limit (lower rates are kept)
 QUALITY_KEYFRAME_SECONDS=10
 X265_QUIET="log-level=error"
 # size: the smallest file x265 can make. Found by searching x265's options on
@@ -265,7 +220,7 @@ plan_video() {
 
   local fps_filter=""
   OUT_FPS="$V_FPS"
-  if [ "$MODE" != "quality" ] && awk -v f="$V_FPS" -v c="$FPS_CAP" 'BEGIN { exit !(f > c + 0.05) }'; then
+  if [ "$MODE" = "size" ] && awk -v f="$V_FPS" -v c="$FPS_CAP" 'BEGIN { exit !(f > c + 0.05) }'; then
     fps_filter="fps=$FPS_CAP"
     OUT_FPS="$FPS_CAP"
   fi
@@ -274,25 +229,10 @@ plan_video() {
     VIDEO_FILTER="${VIDEO_FILTER:+$VIDEO_FILTER,}$SCALE_FILTER"
   fi
 
-  local seconds=$SPEED_KEYFRAME_SECONDS
-  [ "$MODE" = "quality" ] && seconds=$QUALITY_KEYFRAME_SECONDS
   local gop
-  gop=$(awk -v f="$OUT_FPS" -v s="$seconds" 'BEGIN { g = int(f * s + 0.5); if (g < 1) g = 1; print g }')
+  gop=$(awk -v f="$OUT_FPS" -v s="$QUALITY_KEYFRAME_SECONDS" 'BEGIN { g = int(f * s + 0.5); if (g < 1) g = 1; print g }')
 
   case "$MODE" in
-    speed)
-      VIDEO_ARGS=(-c:v:0 "$ENCODER" -tag:v:0 hvc1 -b:v:0 "$BITRATE" -g:v:0 "$gop")
-      if [ "$ENCODER" = "hevc_videotoolbox" ]; then
-        # Same as the apps' Size + Speed: the hardware encoder (or Apple's
-        # software one if there is none), quantizer never below 51 (the
-        # lowest bitrate alone leaves it far above that), no adaptive
-        # quantization, speed over quality, power-saving.
-        VIDEO_ARGS+=(-allow_sw 1 -qmin 51)
-        vt_has_option spatial_aq && VIDEO_ARGS+=(-spatial_aq 0)
-        vt_has_option prio_speed && VIDEO_ARGS+=(-prio_speed 1)
-        vt_has_option power_efficient && VIDEO_ARGS+=(-power_efficient 1)
-      fi
-      ;;
     size)
       local pix=yuv420p
       is_ten_bit "$V_PIXFMT" && pix=yuv420p10le   # keeps HDR (HLG/PQ) intact
@@ -306,17 +246,11 @@ plan_video() {
   esac
 }
 
-VT_OPTIONS=""
-vt_has_option() {
-  [ -z "$VT_OPTIONS" ] && VT_OPTIONS=$(ffmpeg -hide_banner -h encoder=hevc_videotoolbox 2>/dev/null)
-  printf '%s\n' "$VT_OPTIONS" | grep -q -- "-$1 "
-}
-
 has_libvmaf() { ffmpeg -hide_banner -filters 2>/dev/null | grep -q ' libvmaf '; }
 
 # ---------------------------------------------------------------------------
 # Quality mode: find the highest CRF (smallest file) whose VMAF score against
-# the original still reaches --vmaf. The test encodes use the same settings as
+# the original still reaches VMAF_TARGET. The test encodes use the same settings as
 # the real one, on the whole clip if it is short or on 6 spread-out 3-second
 # pieces otherwise. Prints the CRF; progress notes go to stderr.
 
@@ -536,24 +470,13 @@ copy_file_attributes() {
   fi
   [ -n "${mode:-}" ] && chmod "$mode" "$dst" 2>/dev/null
 
-  # File dates — this must be the very last write to the file.
-  # Start from the original file's dates (also the fallback if the clip has
-  # no recording date).
+  # File dates — this must be the very last write to the file: exactly the
+  # same created/modified dates as the original file.
   touch -r "$src" "$dst"
-  if [ "$USE_RECORDING_DATE" -eq 1 ]; then
-    # Later arguments win, so the most precise source (CreationDate, which
-    # carries the time zone) goes last.
-    "${EXIFTOOL[@]}" -overwrite_original -tagsFromFile "$dst" \
-      '-FileModifyDate<CreateDate' '-FileModifyDate<CreationDate' \
-      '-FileCreateDate<CreateDate' '-FileCreateDate<CreationDate' \
-      "$dst"
-  else
-    # Exactly the same created/modified dates as the original file.
-    "${EXIFTOOL[@]}" -overwrite_original -tagsFromFile "$src" \
-      '-FileCreateDate<FileCreateDate' '-FileModifyDate<FileModifyDate' \
-      "$dst"
-    touch -r "$src" "$dst"
-  fi
+  "${EXIFTOOL[@]}" -overwrite_original -tagsFromFile "$src" \
+    '-FileCreateDate<FileCreateDate' '-FileModifyDate<FileModifyDate' \
+    "$dst"
+  touch -r "$src" "$dst"
 }
 
 process_file() {
@@ -633,34 +556,4 @@ process_file() {
   return 0
 }
 
-# Expand folders into the list of video files.
-FILES=()
-failed=0
-for input in "${INPUTS[@]}"; do
-  if [ -d "$input" ]; then
-    while IFS= read -r -d '' f; do
-      b=$(basename "$f")
-      case "$b" in .*) continue ;; esac
-      n="${b%.*}"
-      case "$n" in *_copy|*_copy_avf) continue ;; esac
-      is_video "$f" && FILES+=("$f")
-    done < <(find "$input" -type f -print0 | sort -z)
-  elif [ -f "$input" ]; then
-    FILES+=("$input")
-  else
-    echo "@@FILE_START $input"
-    echo "@@FILE_FAIL File not found"
-    failed=$((failed + 1))
-  fi
-done
-
-for f in "${FILES[@]+"${FILES[@]}"}"; do
-  if ! is_video "$f"; then
-    echo "@@FILE_START $f"
-    echo "@@FILE_SKIP Not a .mp4/.mov/.m4v file"
-    continue
-  fi
-  process_file "$f" || failed=$((failed + 1))
-done
-
-[ "$failed" -eq 0 ]
+process_file "${INPUTS[0]}"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# run_tests.sh script <mode> <fixture>      compress_video.sh --mode <mode>
+# run_tests.sh script <mode> <fixture>      compress_video.sh --mode size|quality
 # run_tests.sh harness <binary> <fixture>   the apps' shared Size + Speed
 #                                           encoder (Tests/TranscoderHarness):
 #                                           iOS path (MetadataCopier) and Mac
