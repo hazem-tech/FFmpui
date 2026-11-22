@@ -23,6 +23,8 @@ struct VideoItem: Identifiable, Equatable {
         case working
         case done
         case failed(String)
+        /// Nothing changed (e.g. the result wasn't smaller than the original).
+        case skipped(String)
     }
 
     let id = UUID()
@@ -450,6 +452,8 @@ final class VideoCompressor {
                     encoded = URL(fileURLWithPath: String(line.dropFirst("@@ENCODED ".count)))
                 } else if line.hasPrefix("@@FILE_FAIL ") {
                     result = .failed(String(line.dropFirst("@@FILE_FAIL ".count)))
+                } else if line.hasPrefix("@@FILE_SKIP ") {
+                    result = .skipped(String(line.dropFirst("@@FILE_SKIP ".count)))
                 } else if line.hasPrefix("@@") || Self.isFFmpegProgressLine(line) {
                     continue
                 } else if !line.trimmingCharacters(in: .whitespaces).isEmpty {

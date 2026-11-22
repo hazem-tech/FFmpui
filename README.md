@@ -9,7 +9,7 @@ shrk compresses your videos to HEVC (H.265), as small as you want them. Unlike a
 - **Simple UI:** add videos or a whole folder (subfolders too), or drag & drop them, then press **Start**.
 - **Four modes** (see [Modes](#modes)): **Size + Speed**, **Speed + Quality**, **Size + Quality** and **Size**, with a **Quality** level (High / Medium / Low) for the quality modes.
 - **Scale:** 1×, 0.5× or 0.25× of the original width and height, in any mode.
-- **Keep or replace:** by default the original is kept and the compressed file is saved next to it as `name_copy.mp4`. Turn on **Replace original files** to overwrite the originals instead (the Mac asks once when you turn it on, then remembers it). An original is only replaced after the new file has been checked (it must open and be the same length).
+- **Keep or replace:** by default the original is kept and the compressed file is saved next to it as `name_copy.mp4`. Turn on **Replace original files** to overwrite the originals instead (the Mac asks once when you turn it on, then remembers it). An original is only replaced after the new file has been checked (it must open and be the same length), and **never by a bigger file**: if the compressed video isn't smaller (an original that is already well compressed, in a quality mode), it's discarded and the original stays exactly as it was ("Kept the original" in its row).
 - **Full metadata preservation:** the original's metadata is copied byte for byte by [`Shared/MetadataCopier.swift`](Shared/MetadataCopier.swift), the same code on Mac and iPhone:
   - Camera make, model and serial number
   - Lens make, model and serial number, plus focal length, aperture, shutter speed and ISO
@@ -57,7 +57,7 @@ How the settings were chosen, and how to re-check them, is in [Tests](#tests).
 
 The `shrk-iOS` target compresses videos from your **Photos library** on iPhone and iPad (iOS 26 or later), with the **Size + Speed** and **Speed + Quality** modes, the same code as on the Mac ([`Shared/VideoTranscoder.swift`](Shared/VideoTranscoder.swift)), so sizes and quality match.
 
-- **Add Videos**, pick a **Mode** (and **Quality**) and a **Scale**, then **Start**. Each video is replaced by its compressed version, saved under the same name. When the run ends, iOS asks once to delete the originals (apps can't skip that question); they stay in **Recently Deleted** for 30 days.
+- **Add Videos**, pick a **Mode** (and **Quality**) and a **Scale**, then **Start**. Each video is replaced by its compressed version, saved under the same name (unless that version isn't smaller: then the original is kept). When the run ends, iOS asks once to delete the originals (apps can't skip that question); they stay in **Recently Deleted** for 30 days.
 - **Edited videos** (trimmed, filtered, slow-motion ramps…): the edited version, as Photos shows it, is compressed, so the edit is kept (baked in) when the original is replaced.
 - **Metadata:** [`Shared/MetadataCopier.swift`](Shared/MetadataCopier.swift), the same code as on the Mac, copies the original file's metadata boxes into the new file byte for byte:
   - Apple Keys (creation date with time zone, GPS, make/model/software, lens, focal length, Live Photo ID)

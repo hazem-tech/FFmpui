@@ -15,7 +15,8 @@
 #     created (macOS) and modified dates kept
 #     (unless SKIP_FILE_DATE is set)
 #   • HDR (HLG / PQ) sources stay 10-bit with the same color tags
-#   • smaller than the source
+#   • smaller than the source (quality and speed-quality: only a note, as
+#     the apps then keep the original)
 #   • quality and speed-quality modes: whole-file VMAF ≥ target − 1 (when
 #     ffmpeg has libvmaf; VMAF_TARGET, default 95)
 #
@@ -157,7 +158,13 @@ esac
 
 # File size
 in_size=$(filesize "$src"); out_size=$(filesize "$out")
-[ "$out_size" -lt "$in_size" ] || fail "output ($out_size bytes) is not smaller than the source ($in_size bytes)"
+if [ "$out_size" -ge "$in_size" ]; then
+  case "$mode" in
+    quality|speed-quality)
+      echo "Note [$name, $mode, ${scale}x]: not smaller than the source ($out_size ≥ $in_size bytes); the apps keep the original" >&2 ;;
+    *) fail "output ($out_size bytes) is not smaller than the source ($in_size bytes)" ;;
+  esac
+fi
 
 # Quality score at the output's size and frame rate
 ref_filters=""

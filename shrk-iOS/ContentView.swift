@@ -154,7 +154,9 @@ struct ContentView: View {
         guard !items.isEmpty else { return "No videos added" }
         let done = items.filter { $0.status == .done }
         let failed = items.filter { if case .failed = $0.status { true } else { false } }.count
+        let kept = items.filter { if case .skipped = $0.status { true } else { false } }.count
         var text = "\(done.count) of \(items.count) done"
+        if kept > 0 { text += " · \(kept) kept as they were" }
         if failed > 0 { text += " · \(failed) failed" }
         let before = done.compactMap(\.originalSize).reduce(0, +)
         let after = done.compactMap(\.newSize).reduce(0, +)
@@ -227,6 +229,8 @@ private struct PhotoRow: View {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
         case .failed:
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+        case .skipped:
+            Image(systemName: "equal.circle").foregroundStyle(.secondary)
         }
     }
 
@@ -246,7 +250,7 @@ private struct PhotoRow: View {
             let percent = before > 0 ? Int((1 - Double(after) / Double(before)) * 100) : 0
             let sizes = "\(before.formatted(.byteCount(style: .file))) → \(after.formatted(.byteCount(style: .file)))"
             return percent > 0 ? "\(sizes) (−\(percent)%)" : sizes
-        case .failed(let reason):
+        case .failed(let reason), .skipped(let reason):
             return reason
         }
     }

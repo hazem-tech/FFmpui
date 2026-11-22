@@ -21,6 +21,8 @@ struct PhotoItem: Identifiable, Equatable {
         case saving
         case done
         case failed(String)
+        /// Nothing changed (e.g. the result wasn't smaller than the original).
+        case skipped(String)
     }
 
     let id = UUID()
@@ -314,6 +316,17 @@ final class PhotoCompressor {
         }
         let newSize = fileSize(output)
         await logResult(output, size: newSize, mode: mode)
+
+        // Never replace a video with a bigger one (an already well-compressed
+        // original in Speed + Quality): keep it as it is.
+        if let newSize, let originalSize, newSize >= originalSize {
+            update(id) {
+                $0.status = .skipped("Kept the original: it's already smaller than this mode makes it")
+                $0.progress = 1
+            }
+            appendLog("Kept \(filename): the compressed copy wasn't smaller.")
+            return
+        }
 
         // 5. Save to Photos; the original is deleted when the run ends.
         update(id) { $0.status = .saving }

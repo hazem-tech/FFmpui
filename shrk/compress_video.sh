@@ -43,6 +43,7 @@
 #   @@ENCODED <path>          --encode-only: the encoded, checked file
 #   @@FILE_DONE <input-bytes> <output-bytes> <output-path>
 #   @@FILE_FAIL <reason>
+#   @@FILE_SKIP <reason>      the result wasn't smaller: the original is kept
 # ffmpeg's own "-progress" lines (out_time_us=…) are also printed to stdout.
 
 set -uo pipefail
@@ -481,12 +482,20 @@ process_file() {
     return 0
   fi
 
-  # 3. Extended attributes, permissions and file dates
-  copy_file_attributes "$src" "$work"
-
   local in_size out_size
   in_size=$(file_size "$src")
   out_size=$(file_size "$work")
+
+  # Never replace a video with a bigger one (an already well-compressed
+  # original in a quality mode): keep the original and say so.
+  if [ "$out_size" -ge "$in_size" ]; then
+    rm -f "$work"; CURRENT_TMP=""
+    echo "@@FILE_SKIP Kept the original: it's already smaller than this mode makes it"
+    return 0
+  fi
+
+  # 3. Extended attributes, permissions and file dates
+  copy_file_attributes "$src" "$work"
 
   # 4. Move into place (a rename keeps the dates we just set)
   if ! mv -f "$work" "$final"; then
