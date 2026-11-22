@@ -150,12 +150,6 @@ nonisolated enum VideoTranscoder {
         let isVideo: Bool
         /// Video only: keep at most this many frames per second.
         var maxFrameRate: Double?
-        /// Audio whose original has no edit list of its own (Samsung and other
-        /// Android phones): AVFoundation still assumes Apple's 2112-sample
-        /// encoder delay and marks it as a trim, which the writer turns into
-        /// an edit list that cuts the last 2112 samples (~44 ms). Dropping
-        /// the trims keeps the track exactly as the original declares it.
-        var keepWholeTrack = false
     }
 
     private static func encode(
@@ -190,10 +184,6 @@ nonisolated enum VideoTranscoder {
         inputsByTrackID[videoTrack.trackID] = video.input
         includedTracks.append(videoTrack)
 
-        // Which tracks of the original really have an edit list (nil if the
-        // file can't be read that way: then AVFoundation's trims are kept).
-        let editedTracks = try? MetadataCopier.trackIDsWithEditLists(in: asset.url)
-
         // Audio (copied) and, on the first try, every other non-video track.
         for track in tracks where track.trackID != videoTrack.trackID {
             let isAudio = track.mediaType == .audio
@@ -212,11 +202,7 @@ nonisolated enum VideoTranscoder {
             guard writer.canAdd(input) else { throw Failure.cannotAdd(what) }
             reader.add(output)
             writer.add(input)
-            var keepWhole = false
-            if isAudio, let editedTracks {
-                keepWhole = !editedTracks.contains(track.trackID)
-            }
-            pairs.append(Pair(output: output, input: input, isVideo: false, keepWholeTrack: keepWhole))
+            pairs.append(Pair(output: output, input: input, isVideo: false))
             inputsByTrackID[track.trackID] = input
             includedTracks.append(track)
         }
@@ -310,10 +296,6 @@ nonisolated enum VideoTranscoder {
                             }
                             lastSlot = slot
                         }
-                    }
-                    if pair.keepWholeTrack {
-                        CMRemoveAttachment(sample, key: kCMSampleBufferAttachmentKey_TrimDurationAtStart)
-                        CMRemoveAttachment(sample, key: kCMSampleBufferAttachmentKey_TrimDurationAtEnd)
                     }
                     guard pair.input.append(sample) else {
                         throw Failure.writeFailed(writer.error?.localizedDescription ?? "unknown error")
