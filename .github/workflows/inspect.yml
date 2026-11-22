@@ -1,7 +1,8 @@
 name: Inspect audio
 
 # Diagnostic: how AVFoundation reads and writes an audio track (segments,
-# sample buffer trims, edit lists), on the Samsung test clip.
+# sample buffer trims, edit lists), on the Samsung test clip. Run it after
+# changing how VideoTranscoder copies audio.
 
 on:
   workflow_dispatch:

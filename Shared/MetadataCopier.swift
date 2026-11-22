@@ -104,6 +104,31 @@ nonisolated enum MetadataCopier {
         return notes
     }
 
+    /// IDs of the tracks that have an edit list (edts / elst) of their own,
+    /// read from the file itself: AVFoundation reports an AAC track without
+    /// one as if it had Apple's 2112-sample encoder delay marked.
+    static func trackIDsWithEditLists(in url: URL) throws -> Set<Int32> {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        guard let moovBox = try topLevelBoxes(handle).first(where: { $0.type == "moov" }) else {
+            throw Failure.malformed("no moov box")
+        }
+        let moov = try read(moovBox, from: handle, limit: maxMoovSize)
+        var ids: Set<Int32> = []
+        for trak in try children(of: moov, box: try rootBox(moov)) where trak.type == "trak" {
+            let kids = try children(of: moov, box: trak)
+            guard let tkhd = kids.first(where: { $0.type == "tkhd" }) else { continue }
+            // version, flags, then the dates (32 or 64 bit each), then the track ID.
+            let idOffset = tkhd.payloadStart + (moov[tkhd.payloadStart] == 1 ? 20 : 12)
+            guard idOffset + 4 <= tkhd.end else { continue }
+            if let edts = kids.first(where: { $0.type == "edts" }),
+               try children(of: moov, box: edts).contains(where: { $0.type == "elst" }) {
+                ids.insert(Int32(bitPattern: be32(moov, idOffset)))
+            }
+        }
+        return ids
+    }
+
     // MARK: - moov / trak
 
     private static func rebuildMoov(output: [UInt8], source: [UInt8], notes: inout [String]) throws -> [UInt8] {

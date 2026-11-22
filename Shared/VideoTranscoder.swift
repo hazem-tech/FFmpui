@@ -150,8 +150,11 @@ nonisolated enum VideoTranscoder {
         let isVideo: Bool
         /// Video only: keep at most this many frames per second.
         var maxFrameRate: Double?
-        /// Audio whose original has no edit list of its own: drop the trims
-        /// AVFoundation adds (see `hasOwnTiming`), so every sample is kept.
+        /// Audio whose original has no edit list of its own (Samsung and other
+        /// Android phones): AVFoundation still assumes Apple's 2112-sample
+        /// encoder delay and marks it as a trim, which the writer turns into
+        /// an edit list that cuts the last 2112 samples (~44 ms). Dropping
+        /// the trims keeps the track exactly as the original declares it.
         var keepWholeTrack = false
     }
 
@@ -187,6 +190,10 @@ nonisolated enum VideoTranscoder {
         inputsByTrackID[videoTrack.trackID] = video.input
         includedTracks.append(videoTrack)
 
+        // Which tracks of the original really have an edit list (nil if the
+        // file can't be read that way: then AVFoundation's trims are kept).
+        let editedTracks = try? MetadataCopier.trackIDsWithEditLists(in: asset.url)
+
         // Audio (copied) and, on the first try, every other non-video track.
         for track in tracks where track.trackID != videoTrack.trackID {
             let isAudio = track.mediaType == .audio
@@ -206,9 +213,8 @@ nonisolated enum VideoTranscoder {
             reader.add(output)
             writer.add(input)
             var keepWhole = false
-            if isAudio {
-                let ownTiming = try await hasOwnTiming(track)
-                keepWhole = !ownTiming
+            if isAudio, let editedTracks {
+                keepWhole = !editedTracks.contains(track.trackID)
             }
             pairs.append(Pair(output: output, input: input, isVideo: false, keepWholeTrack: keepWhole))
             inputsByTrackID[track.trackID] = input
@@ -323,19 +329,6 @@ nonisolated enum VideoTranscoder {
                 try await Task.sleep(for: .milliseconds(5))
             }
         }
-    }
-
-    /// Whether an audio track has its own start / end trims (an edit list,
-    /// e.g. the 2112-sample encoder delay Apple's AAC encoder adds and marks).
-    /// Without one (Samsung and other Android phones), AVFoundation still
-    /// assumes that delay and trims the last 2112 samples (about 44 ms) from
-    /// a copy; the original declares all of them, so the copy should too.
-    private static func hasOwnTiming(_ track: AVAssetTrack) async throws -> Bool {
-        let segments = try await track.load(.segments)
-        guard segments.count == 1, let segment = segments.first, !segment.isEmpty else { return true }
-        let mapping = segment.timeMapping
-        let sameLength = abs((mapping.source.duration - mapping.target.duration).seconds) < 0.001
-        return !(mapping.source.start == .zero && mapping.target.start == .zero && sameLength)
     }
 
     // MARK: - Settings
