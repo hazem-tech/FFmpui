@@ -106,7 +106,13 @@ fi
 # Audio: identical packets
 audio_hash() { ffmpeg -nostdin -v error -i "$1" -map 0:a -c copy -f streamhash -hash sha256 - 2>/dev/null; }
 if [ -n "$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "$src")" ]; then
-  [ "$(audio_hash "$src")" = "$(audio_hash "$out")" ] || fail "audio is not bit-identical to the source"
+  if [ "$(audio_hash "$src")" != "$(audio_hash "$out")" ]; then
+    fail "audio is not bit-identical to the source"
+    # Show how: per-packet timing, size and hash, first differences.
+    packets() { ffmpeg -nostdin -v error -i "$1" -map 0:a:0 -c copy -f framemd5 - 2>/dev/null | grep -v '^#'; }
+    echo "  audio packets: source $(packets "$src" | wc -l | tr -d ' '), output $(packets "$out" | wc -l | tr -d ' ')" >&2
+    diff <(packets "$src") <(packets "$out") | head -n 12 | sed 's/^/  /' >&2
+  fi
 fi
 
 # Metadata
