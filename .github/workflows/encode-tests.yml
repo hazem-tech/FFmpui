@@ -154,4 +154,4 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: brew install shellcheck
-      - run: shellcheck FFmpui/compress_video.sh Tests/*.sh
+      - run: shellcheck shrk/compress_video.sh Tests/*.sh

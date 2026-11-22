@@ -1,6 +1,6 @@
 //
 //  ContentView.swift
-//  FFmpui
+//  shrk
 //
 
 import AppKit
@@ -81,6 +81,18 @@ struct ContentView: View {
             .fixedSize()
             caption(compressor.mode.caption)
 
+            if compressor.mode.hasQualityLevels {
+                Picker("Quality", selection: $compressor.quality) {
+                    ForEach(QualityLevel.allCases) { level in
+                        Text(level.label).tag(level)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .padding(.top, 6)
+                caption(compressor.quality.caption)
+            }
+
             Picker("Scale", selection: $compressor.scale) {
                 ForEach(OutputScale.allCases) { scale in
                     Text(scale.label).tag(scale)
@@ -137,7 +149,7 @@ struct ContentView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("FFmpui")
+            Text("shrk")
                 .font(.largeTitle.bold())
             Text("Compress videos to HEVC and keep all of their metadata.")
                 .foregroundStyle(.secondary)

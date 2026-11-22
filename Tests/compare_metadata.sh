@@ -18,7 +18,7 @@
 set -uo pipefail
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 here=$(cd "$(dirname "$0")" && pwd)
-script="$here/../FFmpui/compress_video.sh"
+script="$here/../shrk/compress_video.sh"
 
 bin="${1:?usage: compare_metadata.sh <harness> <fixture>}"
 fixture="${2:?}"
@@ -26,7 +26,7 @@ base=$(basename "$fixture")
 name="${base%.*}"
 ext="${base##*.}"
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/ffmpui-meta.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/shrk-meta.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
 prepare() {

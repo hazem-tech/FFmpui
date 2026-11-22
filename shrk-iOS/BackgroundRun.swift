@@ -1,6 +1,6 @@
 //
 //  BackgroundRun.swift
-//  FFmpui (iOS)
+//  shrk (iOS)
 //
 //  Lets a compression run keep going when the user leaves the app, using
 //  iOS 26's continued processing tasks: the system shows the progress, and
@@ -28,7 +28,7 @@ final class BackgroundRun {
         UIApplication.shared.isIdleTimerDisabled = true
 
         // Must match BGTaskSchedulerPermittedIdentifiers ("<bundle id>.compress.*").
-        let identifier = "\(Bundle.main.bundleIdentifier ?? "ht.FFmpui.ios").compress.\(UUID().uuidString)"
+        let identifier = "\(Bundle.main.bundleIdentifier ?? "ht.shrk.ios").compress.\(UUID().uuidString)"
         let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) { [weak self] task in
             MainActor.assumeIsolated {
                 guard let self, self.isActive, let task = task as? BGContinuedProcessingTask else {

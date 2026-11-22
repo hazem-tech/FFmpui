@@ -33,7 +33,7 @@ if [ "${1:-}" = "--build" ]; then
 fi
 
 video="${1:?usage: run_transcoder.sh <video>}"
-work=$(mktemp -d "${TMPDIR:-/tmp}/ffmpui-bench.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/shrk-bench.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 bin="$work/transcoder-harness"
 echo "Building the harness…"

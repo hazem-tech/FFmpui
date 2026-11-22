@@ -1,6 +1,6 @@
 //
 //  PhotoCompressor.swift
-//  FFmpui (iOS)
+//  shrk (iOS)
 //
 //  The iOS version of VideoCompressor: a queue of Photos videos, each one
 //  exported, encoded with the shared VideoTranscoder (the Mac's "Size +
@@ -41,12 +41,43 @@ struct PhotoItem: Identifiable, Equatable {
 
 @Observable
 final class PhotoCompressor {
+    /// The Mac's two hardware-encoder modes (shared VideoTranscoder).
+    enum Mode: String, CaseIterable, Identifiable {
+        case sizeAndSpeed
+        case speedAndQuality
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .sizeAndSpeed: "Size + Speed"
+            case .speedAndQuality: "Speed + Quality"
+            }
+        }
+
+        var caption: String {
+            switch self {
+            case .sizeAndSpeed: "The smallest file the hardware encoder can make, at most 24 fps."
+            case .speedAndQuality: "Looks like the original, at the chosen quality. Same frame rate."
+            }
+        }
+    }
+
     private static let scaleKey = "scale"
+    private static let modeKey = "mode"
+    private static let qualityKey = "quality"
 
     var items: [PhotoItem] = []
     /// Remembered between launches.
     var scale: OutputScale = .full {
         didSet { UserDefaults.standard.set(scale.rawValue, forKey: Self.scaleKey) }
+    }
+    var mode: Mode = .sizeAndSpeed {
+        didSet { UserDefaults.standard.set(mode.rawValue, forKey: Self.modeKey) }
+    }
+    /// Speed + Quality only.
+    var quality: QualityLevel = .medium {
+        didSet { UserDefaults.standard.set(quality.rawValue, forKey: Self.qualityKey) }
     }
     private(set) var isRunning = false
     private(set) var log: [String] = []
@@ -58,7 +89,10 @@ final class PhotoCompressor {
     private let background = BackgroundRun()
 
     init() {
-        scale = OutputScale(rawValue: UserDefaults.standard.double(forKey: Self.scaleKey)) ?? .full
+        let defaults = UserDefaults.standard
+        scale = OutputScale(rawValue: defaults.double(forKey: Self.scaleKey)) ?? .full
+        mode = defaults.string(forKey: Self.modeKey).flatMap(Mode.init(rawValue:)) ?? .sizeAndSpeed
+        quality = defaults.string(forKey: Self.qualityKey).flatMap(QualityLevel.init(rawValue:)) ?? .medium
         background.onExpire = { [weak self] in
             self?.appendLog("iOS ended the background run.")
             self?.stop()
@@ -212,7 +246,7 @@ final class PhotoCompressor {
 
         // Work in a private temp folder that is always cleaned up.
         let work = FileManager.default.temporaryDirectory
-            .appendingPathComponent("FFmpui", isDirectory: true)
+            .appendingPathComponent("shrk", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let outputFolder = work.appendingPathComponent("out", isDirectory: true)
         try FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
@@ -251,11 +285,14 @@ final class PhotoCompressor {
             $0.originalSize = originalSize
         }
 
-        // 2. Encode (the Mac's Size + Speed mode)
+        // 2. Encode (the same code and settings as the Mac's hardware modes)
+        let mode = self.mode
         try await VideoTranscoder.transcode(
             source: content,
             destination: output,
-            settings: .sizeAndSpeed(scale: scale.rawValue),
+            settings: mode == .speedAndQuality
+                ? .speedAndQuality(scale: scale.rawValue, level: quality)
+                : .sizeAndSpeed(scale: scale.rawValue),
             log: { line in Task { @MainActor in self.appendLog(line) } },
             progress: progress
         )
@@ -276,7 +313,7 @@ final class PhotoCompressor {
             throw Failure.checkFailed(before: before, after: after)
         }
         let newSize = fileSize(output)
-        await logResult(output, size: newSize)
+        await logResult(output, size: newSize, mode: mode)
 
         // 5. Save to Photos; the original is deleted when the run ends.
         update(id) { $0.status = .saving }
@@ -312,13 +349,13 @@ final class PhotoCompressor {
     }
 
     /// Same line as the Mac's Details log, for comparing results.
-    private func logResult(_ output: URL, size: Int64?) async {
+    private func logResult(_ output: URL, size: Int64?, mode: Mode) async {
         var bitrate = "?"
         if let track = try? await AVURLAsset(url: output).loadTracks(withMediaType: .video).first,
            let rate = try? await track.load(.estimatedDataRate), rate > 0 {
             bitrate = String(format: "%.2f Mbit/s", Double(rate) / 1_000_000)
         }
         let sizeText = size.map { $0.formatted(.byteCount(style: .file)) } ?? "?"
-        appendLog("✔︎ Size + Speed: \(output.lastPathComponent) · \(sizeText) · video \(bitrate)")
+        appendLog("✔︎ \(mode.label): \(output.lastPathComponent) · \(sizeText) · video \(bitrate)")
     }
 }

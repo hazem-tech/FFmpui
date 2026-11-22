@@ -8,15 +8,16 @@
 #   • HEVC video tagged hvc1, same duration (±1 s or 1%)
 #   • width/height = source × scale, rounded down to even numbers
 #   • same rotation, and a rotation matrix offset that fits the new size
-#   • frame rate: speed/size modes cap > 24 fps sources at 24 (≥ 23);
-#     otherwise unchanged
+#   • frame rate: speed (Size + Speed) and size modes cap > 24 fps sources at
+#     24 (≥ 23); quality and speed-quality keep it
 #   • every audio stream bit-for-bit identical to the source
 #   • recorded date (QuickTime and Apple), Make, Model and GPS kept; file
 #     created (macOS) and modified dates kept
 #     (unless SKIP_FILE_DATE is set)
 #   • HDR (HLG / PQ) sources stay 10-bit with the same color tags
 #   • smaller than the source
-#   • quality mode: whole-file VMAF ≥ target − 1 (when ffmpeg has libvmaf)
+#   • quality and speed-quality modes: whole-file VMAF ≥ target − 1 (when
+#     ffmpeg has libvmaf; VMAF_TARGET, default 95)
 #
 # The row's quality column is VMAF (or SSIM without libvmaf) against the
 # source, at the output's size and frame rate.
@@ -95,7 +96,7 @@ fi
 fs=$(rate "$(vprobe "$src" avg_frame_rate)")
 fo=$(rate "$(vprobe "$out" avg_frame_rate)")
 capped=0
-if [ "$mode" != "quality" ] && awk -v f="$fs" 'BEGIN { exit !(f > 24.05) }'; then
+if { [ "$mode" = "size" ] || [ "$mode" = "speed" ]; } && awk -v f="$fs" 'BEGIN { exit !(f > 24.05) }'; then
   capped=1
   awk -v f="$fo" 'BEGIN { exit !(f >= 23 && f <= 24.05) }' || fail "frame rate $fo, expected 23–24 (source $fs)"
 else
@@ -116,7 +117,7 @@ if [ -n "$(ffprobe -v error -select_streams a -show_entries stream=index -of csv
     out_packets=$(packets "$out" | cut -d, -f1-6)
     n_src=$(printf '%s\n' "$src_packets" | wc -l | tr -d ' ')
     n_out=$(printf '%s\n' "$out_packets" | wc -l | tr -d ' ')
-    if [ "$mode" = "speed" ] && [ "$n_out" -le "$n_src" ] && [ $((n_src - n_out)) -le 3 ] \
+    if { [ "$mode" = "speed" ] || [ "$mode" = "speed-quality" ]; } && [ "$n_out" -le "$n_src" ] && [ $((n_src - n_out)) -le 3 ] \
        && [ "$(printf '%s\n' "$src_packets" | head -n "$n_out")" = "$out_packets" ]; then
       echo "Note [$name, ${scale}x]: audio identical except the last ~44 ms (Apple's AAC end trim; known)" >&2
     else
@@ -173,7 +174,7 @@ if ffmpeg -hide_banner -filters 2>/dev/null | grep -q ' libvmaf '; then
             -filter_complex "${graph}libvmaf=n_threads=$threads" -f null - 2>&1 \
           | sed -n 's/.*VMAF score: *\([0-9.]*\).*/\1/p' | tail -n1)
   quality="VMAF ${score:-?}"
-  if [ "$mode" = "quality" ]; then
+  if [ "$mode" = "quality" ] || [ "$mode" = "speed-quality" ]; then
     awk -v s="${score:-0}" -v t="$vmaf_target" 'BEGIN { exit !(s + 0 >= t - 1) }' \
       || fail "VMAF ${score:-?} is below the target $vmaf_target"
   fi

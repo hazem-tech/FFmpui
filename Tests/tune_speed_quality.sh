@@ -16,7 +16,7 @@ dir="${2:?}"
 settings=(0.40 0.50 0.60 0.70 0.75 0.80 0.85 0.90 0.95)
 targets=(97 95 92)
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/ffmpui-sq.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/shrk-sq.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
 video_bytes() {

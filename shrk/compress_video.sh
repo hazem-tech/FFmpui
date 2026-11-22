@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# compress_video.sh — the FFmpui Mac app's engine (run by the app, one video
+# compress_video.sh — the shrk Mac app's engine (run by the app, one video
 # at a time). The app calls it once or twice per video:
 #
 #   Size / Size + Quality:
@@ -24,6 +24,8 @@
 #   --mode quality    x265, 10-bit: for each video, the smallest file that still
 #                     scores VMAF 95 against the original; same frame rate. Slow.
 #   --scale <f>       width and height factor: 1 (default), 0.5 or 0.25
+#   --vmaf <score>    quality mode's target (default 95; the app's Quality
+#                     menu: 97 / 95 / 92)
 #   --replace         overwrite the original (default: keep it)
 #
 # Every audio track is copied untouched, as are timecode, telemetry and other
@@ -63,6 +65,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --mode) shift; MODE="${1:?--mode needs a value}" ;;
     --scale) shift; SCALE="${1:?--scale needs a value}" ;;
+    --vmaf) shift; VMAF_TARGET="${1:?--vmaf needs a value}" ;;
     --replace) REPLACE=1 ;;
     --encoded) shift; ENCODED="${1:?--encoded needs a file}" ;;
     --encode-only) ENCODE_ONLY=1 ;;
@@ -85,6 +88,10 @@ if [ -z "$ENCODED" ]; then
     size|quality) ;;
     *) echo "Use --mode size or --mode quality, or --encoded <file>." >&2; exit 2 ;;
   esac
+fi
+if ! awk -v v="$VMAF_TARGET" 'BEGIN { exit !(v + 0 > 0 && v + 0 <= 100) }'; then
+  echo "--vmaf must be a score between 0 and 100" >&2
+  exit 2
 fi
 if ! awk -v s="$SCALE" 'BEGIN { exit !(s + 0 > 0 && s + 0 <= 1) }'; then
   echo "--scale must be a number above 0 and at most 1 (e.g. 1, 0.5, 0.25)" >&2
@@ -150,16 +157,16 @@ X265_QUIET="log-level=error"
 # at every scale (slower presets give *bigger* files at this quantizer), and
 # it is quick. (min-cu-size=32 was dropped: with x265 4.3 it tripled the
 # size at 640×360.)
-SIZE_PRESET="${FFMPUI_SIZE_PRESET:-veryfast}"
-SIZE_CRF="${FFMPUI_SIZE_CRF:-51}"
-SIZE_X265="${FFMPUI_SIZE_X265:-keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1}"
+SIZE_PRESET="${SHRK_SIZE_PRESET:-veryfast}"
+SIZE_CRF="${SHRK_SIZE_CRF:-51}"
+SIZE_X265="${SHRK_SIZE_X265:-keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1}"
 # quality: 10-bit x265 at the slower preset; the CRF is picked per video
 # (below). Chosen with Tests/tune.sh (bytes needed for VMAF 95 on the test
 # clips): aq-mode 4 + no SAO + psy-rd 1.0 needs 16% fewer bytes than the
 # usual aq-mode 3; veryslow saves under 1% more for about twice the time.
-# (The FFMPUI_* environment variables are for tune.sh.)
-QUALITY_PRESET="${FFMPUI_QUALITY_PRESET:-slower}"
-QUALITY_X265="${FFMPUI_QUALITY_X265:-aq-mode=4:sao=0:psy-rd=1.0}"
+# (The SHRK_* environment variables are for tune.sh.)
+QUALITY_PRESET="${SHRK_QUALITY_PRESET:-slower}"
+QUALITY_X265="${SHRK_QUALITY_X265:-aq-mode=4:sao=0:psy-rd=1.0}"
 QUALITY_CRF_MIN=14
 QUALITY_CRF_MAX=36
 QUALITY_CRF_FALLBACK=22     # used when ffmpeg has no libvmaf
@@ -310,7 +317,7 @@ pick_quality_crf() {
     echo "Note: this ffmpeg has no libvmaf, so quality mode uses CRF $QUALITY_CRF_FALLBACK for every video." >&2
     return
   fi
-  SEARCH_DIR=$(mktemp -d "${TMPDIR:-/tmp}/ffmpui-search.XXXXXX") || return
+  SEARCH_DIR=$(mktemp -d "${TMPDIR:-/tmp}/shrk-search.XXXXXX") || return
   sample_inputs "$src" "$duration"
 
   # Binary search for the highest CRF that reaches the target; the answer
@@ -435,10 +442,10 @@ process_file() {
 
   if [ "$REPLACE" -eq 1 ]; then
     final="$src"
-    work="$dir/.${name}.ffmpui-tmp.${ext}"
+    work="$dir/.${name}.shrk-tmp.${ext}"
   else
     final="$dir/${name}${SUFFIX}.${ext}"
-    work="$dir/.${name}${SUFFIX}.ffmpui-tmp.${ext}"
+    work="$dir/.${name}${SUFFIX}.shrk-tmp.${ext}"
   fi
   if [ -n "$ENCODED" ]; then
     work="$ENCODED"

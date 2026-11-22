@@ -1,12 +1,12 @@
 //
-//  FFmpuiApp.swift
-//  FFmpui (iOS)
+//  ShrkApp.swift
+//  shrk (iOS)
 //
 
 import SwiftUI
 
 @main
-struct FFmpuiApp: App {
+struct ShrkApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

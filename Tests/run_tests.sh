@@ -4,7 +4,8 @@
 #     the Mac app's Size / Size + Quality: compress_video.sh --encode-only,
 #     MetadataCopier (through the harness), compress_video.sh --encoded
 # run_tests.sh harness <harness> <fixture>
-#     the apps' shared Size + Speed encoder (Tests/TranscoderHarness):
+#     the apps' shared hardware encoder (Tests/TranscoderHarness), Size +
+#     Speed and Speed + Quality (Medium):
 #     iPhone path (encode + MetadataCopier) and Mac path (encode +
 #     MetadataCopier + compress_video.sh --encoded)
 #
@@ -15,7 +16,7 @@
 set -uo pipefail
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 here=$(cd "$(dirname "$0")" && pwd)
-script="$here/../FFmpui/compress_video.sh"
+script="$here/../shrk/compress_video.sh"
 
 kind="${1:?usage: run_tests.sh script <mode> <fixture> <harness> | harness <harness> <fixture>}"
 arg="${2:?}"
@@ -28,7 +29,7 @@ ext="${base##*.}"
 scales=(1 0.5)
 [ "$base" = "IMG_6758.mov" ] && scales+=(0.25)
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/ffmpui-test.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/shrk-test.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 failed=0
 
@@ -81,25 +82,31 @@ for scale in "${scales[@]}"; do
       ;;
     harness)
       bin="$harness"
-      # iOS: encode, then MetadataCopier (Photos sets the file dates there).
-      dir=$(prepare "ios-$scale")
-      start=$(date +%s)
-      "$bin" "$dir/$base" "$dir/${name}_copy.$ext" --scale "$scale" --copy-metadata > "$dir/log.txt" 2>&1 \
-        || { echo "FAIL [$base, iOS path, ${scale}x]:" >&2; tail -n 20 "$dir/log.txt" >&2; }
-      grep -E '^(Encoder|VideoToolbox|Note)' "$dir/log.txt" >&2 || true
-      SKIP_FILE_DATE=1 bash "$here/check_output.sh" "$dir/$base" "$dir/${name}_copy.$ext" speed "$scale" \
-        "$(seconds_since "$start")" | sed 's/| speed |/| speed (iOS) |/' || failed=1
+      # Size + Speed, and Speed + Quality at Medium (VMAF 95).
+      for preset in speed speed-quality; do
+        options=(--scale "$scale")
+        [ "$preset" = "speed-quality" ] && options=(--level medium --scale "$scale")
 
-      # Mac: encode, MetadataCopier, then the script's checks / file dates.
-      dir=$(prepare "mac-$scale")
-      start=$(date +%s)
-      { "$bin" "$dir/$base" "$dir/.encoded.$ext" --scale "$scale" \
-          && "$bin" "$dir/$base" "$dir/.encoded.$ext" --metadata-only; } > "$dir/log.txt" 2>&1 \
-        || { echo "FAIL [$base, Mac path, ${scale}x]:" >&2; tail -n 20 "$dir/log.txt" >&2; }
-      bash "$script" --encoded "$dir/.encoded.$ext" -- "$dir/$base" >> "$dir/log.txt" 2>&1 \
-        || { echo "FAIL [$base, Mac path, ${scale}x]: compress_video.sh --encoded failed" >&2; grep -v '=' "$dir/log.txt" | tail -n 20 >&2; }
-      bash "$here/check_output.sh" "$dir/$base" "$dir/${name}_copy.$ext" speed "$scale" \
-        "$(seconds_since "$start")" | sed 's/| speed |/| speed (Mac) |/' || failed=1
+        # iOS: encode, then MetadataCopier (Photos sets the file dates there).
+        dir=$(prepare "ios-$preset-$scale")
+        start=$(date +%s)
+        "$bin" "$dir/$base" "$dir/${name}_copy.$ext" "${options[@]}" --copy-metadata > "$dir/log.txt" 2>&1 \
+          || { echo "FAIL [$base, $preset, iOS path, ${scale}x]:" >&2; tail -n 20 "$dir/log.txt" >&2; }
+        grep -E '^(Encoder|VideoToolbox|Note)' "$dir/log.txt" >&2 || true
+        SKIP_FILE_DATE=1 bash "$here/check_output.sh" "$dir/$base" "$dir/${name}_copy.$ext" "$preset" "$scale" \
+          "$(seconds_since "$start")" | sed "s/| $preset |/| $preset (iOS) |/" || failed=1
+
+        # Mac: encode, MetadataCopier, then the script's checks / file dates.
+        dir=$(prepare "mac-$preset-$scale")
+        start=$(date +%s)
+        { "$bin" "$dir/$base" "$dir/.encoded.$ext" "${options[@]}" \
+            && "$bin" "$dir/$base" "$dir/.encoded.$ext" --metadata-only; } > "$dir/log.txt" 2>&1 \
+          || { echo "FAIL [$base, $preset, Mac path, ${scale}x]:" >&2; tail -n 20 "$dir/log.txt" >&2; }
+        bash "$script" --encoded "$dir/.encoded.$ext" -- "$dir/$base" >> "$dir/log.txt" 2>&1 \
+          || { echo "FAIL [$base, $preset, Mac path, ${scale}x]: compress_video.sh --encoded failed" >&2; grep -v '=' "$dir/log.txt" | tail -n 20 >&2; }
+        bash "$here/check_output.sh" "$dir/$base" "$dir/${name}_copy.$ext" "$preset" "$scale" \
+          "$(seconds_since "$start")" | sed "s/| $preset |/| $preset (Mac) |/" || failed=1
+      done
       ;;
     *)
       echo "Unknown test kind '$kind'" >&2

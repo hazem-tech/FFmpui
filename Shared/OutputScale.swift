@@ -1,6 +1,6 @@
 //
 //  OutputScale.swift
-//  FFmpui
+//  shrk
 //
 //  The "Scale" menu: output width and height as a fraction of the original's.
 //  Works the same with every mode. Shared by both apps.

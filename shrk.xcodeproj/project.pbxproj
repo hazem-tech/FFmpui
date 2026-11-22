@@ -7,19 +7,19 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		A15E34263098A24B00AD3B90 /* FFmpui.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FFmpui.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		B1F000000000000000000001 /* FFmpui-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "FFmpui-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A15E34263098A24B00AD3B90 /* shrk.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = shrk.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B1F000000000000000000001 /* shrk-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "shrk-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		A15E34283098A24B00AD3B90 /* FFmpui */ = {
+		A15E34283098A24B00AD3B90 /* shrk */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = FFmpui;
+			path = shrk;
 			sourceTree = "<group>";
 		};
-		B1F000000000000000000002 /* FFmpui-iOS */ = {
+		B1F000000000000000000002 /* shrk-iOS */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "FFmpui-iOS";
+			path = "shrk-iOS";
 			sourceTree = "<group>";
 		};
 		B1F000000000000000000003 /* Shared */ = {
@@ -46,8 +46,8 @@
 		A15E341D3098A24B00AD3B90 = {
 			isa = PBXGroup;
 			children = (
-				A15E34283098A24B00AD3B90 /* FFmpui */,
-				B1F000000000000000000002 /* FFmpui-iOS */,
+				A15E34283098A24B00AD3B90 /* shrk */,
+				B1F000000000000000000002 /* shrk-iOS */,
 				B1F000000000000000000003 /* Shared */,
 				A15E34273098A24B00AD3B90 /* Products */,
 			);
@@ -56,8 +56,8 @@
 		A15E34273098A24B00AD3B90 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A15E34263098A24B00AD3B90 /* FFmpui.app */,
-				B1F000000000000000000001 /* FFmpui-iOS.app */,
+				A15E34263098A24B00AD3B90 /* shrk.app */,
+				B1F000000000000000000001 /* shrk-iOS.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -65,9 +65,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A15E34253098A24B00AD3B90 /* FFmpui */ = {
+		A15E34253098A24B00AD3B90 /* shrk */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A15E34313098A24E00AD3B90 /* Build configuration list for PBXNativeTarget "FFmpui" */;
+			buildConfigurationList = A15E34313098A24E00AD3B90 /* Build configuration list for PBXNativeTarget "shrk" */;
 			buildPhases = (
 				A15E34223098A24B00AD3B90 /* Sources */,
 				A15E34233098A24B00AD3B90 /* Frameworks */,
@@ -76,17 +76,17 @@
 			buildRules = (
 			);
 			fileSystemSynchronizedGroups = (
-				A15E34283098A24B00AD3B90 /* FFmpui */,
+				A15E34283098A24B00AD3B90 /* shrk */,
 				B1F000000000000000000003 /* Shared */,
 			);
-			name = FFmpui;
-			productName = FFmpui;
-			productReference = A15E34263098A24B00AD3B90 /* FFmpui.app */;
+			name = shrk;
+			productName = shrk;
+			productReference = A15E34263098A24B00AD3B90 /* shrk.app */;
 			productType = "com.apple.product-type.application";
 		};
-		B1F000000000000000000007 /* FFmpui-iOS */ = {
+		B1F000000000000000000007 /* shrk-iOS */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B1F000000000000000000008 /* Build configuration list for PBXNativeTarget "FFmpui-iOS" */;
+			buildConfigurationList = B1F000000000000000000008 /* Build configuration list for PBXNativeTarget "shrk-iOS" */;
 			buildPhases = (
 				B1F000000000000000000004 /* Sources */,
 				B1F000000000000000000005 /* Frameworks */,
@@ -95,12 +95,12 @@
 			buildRules = (
 			);
 			fileSystemSynchronizedGroups = (
-				B1F000000000000000000002 /* FFmpui-iOS */,
+				B1F000000000000000000002 /* shrk-iOS */,
 				B1F000000000000000000003 /* Shared */,
 			);
-			name = "FFmpui-iOS";
-			productName = "FFmpui-iOS";
-			productReference = B1F000000000000000000001 /* FFmpui-iOS.app */;
+			name = "shrk-iOS";
+			productName = "shrk-iOS";
+			productReference = B1F000000000000000000001 /* shrk-iOS.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -121,7 +121,7 @@
 					};
 				};
 			};
-			buildConfigurationList = A15E34213098A24B00AD3B90 /* Build configuration list for PBXProject "FFmpui" */;
+			buildConfigurationList = A15E34213098A24B00AD3B90 /* Build configuration list for PBXProject "shrk" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -135,8 +135,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A15E34253098A24B00AD3B90 /* FFmpui */,
-				B1F000000000000000000007 /* FFmpui-iOS */,
+				A15E34253098A24B00AD3B90 /* shrk */,
+				B1F000000000000000000007 /* shrk-iOS */,
 			);
 		};
 /* End PBXProject section */
@@ -168,7 +168,7 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		A15E342F3098A24E00AD3B90 /* Debug configuration for PBXProject "FFmpui" */ = {
+		A15E342F3098A24E00AD3B90 /* Debug configuration for PBXProject "shrk" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -232,7 +232,7 @@
 			};
 			name = Debug;
 		};
-		A15E34303098A24E00AD3B90 /* Release configuration for PBXProject "FFmpui" */ = {
+		A15E34303098A24E00AD3B90 /* Release configuration for PBXProject "shrk" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -288,7 +288,7 @@
 			};
 			name = Release;
 		};
-		A15E34323098A24E00AD3B90 /* Debug configuration for PBXNativeTarget "FFmpui" */ = {
+		A15E34323098A24E00AD3B90 /* Debug configuration for PBXNativeTarget "shrk" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -314,7 +314,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = ht.FFmpui;
+				PRODUCT_BUNDLE_IDENTIFIER = ht.shrk;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
@@ -332,7 +332,7 @@
 			};
 			name = Debug;
 		};
-		A15E34333098A24E00AD3B90 /* Release configuration for PBXNativeTarget "FFmpui" */ = {
+		A15E34333098A24E00AD3B90 /* Release configuration for PBXNativeTarget "shrk" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -358,7 +358,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = ht.FFmpui;
+				PRODUCT_BUNDLE_IDENTIFIER = ht.shrk;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				RUNTIME_EXCEPTION_ALLOW_DYLD_ENVIRONMENT_VARIABLES = NO;
@@ -376,7 +376,7 @@
 			};
 			name = Release;
 		};
-		B1F000000000000000000009 /* Debug configuration for PBXNativeTarget "FFmpui-iOS" */ = {
+		B1F000000000000000000009 /* Debug configuration for PBXNativeTarget "shrk-iOS" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -386,11 +386,11 @@
 				DEVELOPMENT_TEAM = CL4CTC5AZQ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Config/FFmpui-iOS-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = FFmpui;
+				INFOPLIST_FILE = "Config/shrk-iOS-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = shrk;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "FFmpui saves the compressed videos to your library.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "FFmpui reads each video's original file to compress it, saves the compressed copy with the same date, location and camera details, and moves the original to Recently Deleted.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "shrk saves the compressed videos to your library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "shrk reads each video's original file to compress it, saves the compressed copy with the same date, location and camera details, and moves the original to Recently Deleted.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -402,7 +402,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = ht.FFmpui.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = ht.shrk.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -418,7 +418,7 @@
 			};
 			name = Debug;
 		};
-		B1F00000000000000000000A /* Release configuration for PBXNativeTarget "FFmpui-iOS" */ = {
+		B1F00000000000000000000A /* Release configuration for PBXNativeTarget "shrk-iOS" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -428,11 +428,11 @@
 				DEVELOPMENT_TEAM = CL4CTC5AZQ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = "Config/FFmpui-iOS-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = FFmpui;
+				INFOPLIST_FILE = "Config/shrk-iOS-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = shrk;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "FFmpui saves the compressed videos to your library.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "FFmpui reads each video's original file to compress it, saves the compressed copy with the same date, location and camera details, and moves the original to Recently Deleted.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "shrk saves the compressed videos to your library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "shrk reads each video's original file to compress it, saves the compressed copy with the same date, location and camera details, and moves the original to Recently Deleted.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -444,7 +444,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = ht.FFmpui.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = ht.shrk.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -464,27 +464,27 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A15E34213098A24B00AD3B90 /* Build configuration list for PBXProject "FFmpui" */ = {
+		A15E34213098A24B00AD3B90 /* Build configuration list for PBXProject "shrk" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				A15E342F3098A24E00AD3B90 /* Debug configuration for PBXProject "FFmpui" */,
-				A15E34303098A24E00AD3B90 /* Release configuration for PBXProject "FFmpui" */,
+				A15E342F3098A24E00AD3B90 /* Debug configuration for PBXProject "shrk" */,
+				A15E34303098A24E00AD3B90 /* Release configuration for PBXProject "shrk" */,
 			);
 			defaultConfigurationName = Release;
 		};
-		A15E34313098A24E00AD3B90 /* Build configuration list for PBXNativeTarget "FFmpui" */ = {
+		A15E34313098A24E00AD3B90 /* Build configuration list for PBXNativeTarget "shrk" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				A15E34323098A24E00AD3B90 /* Debug configuration for PBXNativeTarget "FFmpui" */,
-				A15E34333098A24E00AD3B90 /* Release configuration for PBXNativeTarget "FFmpui" */,
+				A15E34323098A24E00AD3B90 /* Debug configuration for PBXNativeTarget "shrk" */,
+				A15E34333098A24E00AD3B90 /* Release configuration for PBXNativeTarget "shrk" */,
 			);
 			defaultConfigurationName = Release;
 		};
-		B1F000000000000000000008 /* Build configuration list for PBXNativeTarget "FFmpui-iOS" */ = {
+		B1F000000000000000000008 /* Build configuration list for PBXNativeTarget "shrk-iOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B1F000000000000000000009 /* Debug configuration for PBXNativeTarget "FFmpui-iOS" */,
-				B1F00000000000000000000A /* Release configuration for PBXNativeTarget "FFmpui-iOS" */,
+				B1F000000000000000000009 /* Debug configuration for PBXNativeTarget "shrk-iOS" */,
+				B1F00000000000000000000A /* Release configuration for PBXNativeTarget "shrk-iOS" */,
 			);
 			defaultConfigurationName = Release;
 		};

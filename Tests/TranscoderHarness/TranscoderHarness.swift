@@ -9,6 +9,8 @@
 //  transcoder-harness <source> <output> [options]
 //    --speed-quality <q> use the Speed + Quality preset at encoder quality q
 //                        (put it first: later options change the preset)
+//    --level <l>         the app's Speed + Quality at level high, medium or
+//                        low (put it first)
 //    --scale <f>         1, 0.5 or 0.25 (default 1)
 //    --no-fps-cap        keep every frame (default: cap at 24 fps)
 //    --keyframes <k>     seconds between keyframes (default 10), "single"
@@ -61,6 +63,9 @@ struct TranscoderHarness {
         while !args.isEmpty {
             let option = args.removeFirst()
             switch option {
+            case "--level":
+                let level = QualityLevel(rawValue: args.removeFirst()) ?? .medium
+                settings = .speedAndQuality(scale: settings.scale, level: level)
             case "--speed-quality":
                 settings = .speedAndQuality(scale: settings.scale, quality: Double(args.removeFirst()) ?? 0.75)
             case "--scale": settings.scale = Double(args.removeFirst()) ?? 1

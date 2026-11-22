@@ -5,7 +5,7 @@
 # tune.sh quality-variants                    list the quality candidates
 #
 # Size: runs compress_video.sh --mode size with each candidate (through the
-# FFMPUI_SIZE_* variables) on every fixture at each scale and adds up the
+# SHRK_SIZE_* variables) on every fixture at each scale and adds up the
 # video bytes. Smallest totals win.
 #
 # Quality: encodes each fixture at several CRFs with the candidate's x265
@@ -17,7 +17,7 @@
 set -uo pipefail
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 here=$(cd "$(dirname "$0")" && pwd)
-script="$here/../FFmpui/compress_video.sh"
+script="$here/../shrk/compress_video.sh"
 target="${VMAF_TARGET:-95}"
 
 # Candidates (name|preset|x265 params) live in Tests/tune/size.txt and
@@ -44,7 +44,7 @@ case "${1:-}" in
 
   size)
     dir="${2:?fixtures dir}"
-    work=$(mktemp -d "${TMPDIR:-/tmp}/ffmpui-tune.XXXXXX")
+    work=$(mktemp -d "${TMPDIR:-/tmp}/shrk-tune.XXXXXX")
     trap 'rm -rf "$work"' EXIT
     scales=(1 0.5 0.25)
     echo "| Size setting | Preset | Video bytes at 1× | 0.5× | 0.25× | Seconds |"
@@ -56,7 +56,7 @@ case "${1:-}" in
         while IFS= read -r f; do
           d="$work/$name-$scale"; mkdir -p "$d"; cp -p "$f" "$d/"
           b=$(basename "$f")
-          FFMPUI_SIZE_PRESET="$preset" FFMPUI_SIZE_X265="$params" \
+          SHRK_SIZE_PRESET="$preset" SHRK_SIZE_X265="$params" \
             bash "$script" --mode size --scale "$scale" "$d/$b" >/dev/null 2>&1 < /dev/null
           out="$d/${b%.*}_copy.${b##*.}"
           [ -f "$out" ] && total=$((total + $(video_bytes "$out")))
@@ -73,7 +73,7 @@ case "${1:-}" in
     line=$(read_variants quality | grep "^$want|" | head -n1)
     [ -n "$line" ] || { echo "Unknown variant $want" >&2; exit 2; }
     IFS='|' read -r name preset params <<< "$line"
-    work=$(mktemp -d "${TMPDIR:-/tmp}/ffmpui-tune.XXXXXX")
+    work=$(mktemp -d "${TMPDIR:-/tmp}/shrk-tune.XXXXXX")
     trap 'rm -rf "$work"' EXIT
     total=0; start=$(date +%s); points=""
     while IFS= read -r f; do

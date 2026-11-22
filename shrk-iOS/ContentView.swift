@@ -1,6 +1,6 @@
 //
 //  ContentView.swift
-//  FFmpui (iOS)
+//  shrk (iOS)
 //
 
 import PhotosUI
@@ -40,7 +40,7 @@ struct ContentView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) { controls }
-            .navigationTitle("FFmpui")
+            .navigationTitle("shrk")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Clear", systemImage: "trash") { compressor.clear() }
@@ -87,6 +87,27 @@ struct ContentView: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 10) {
+            Picker("Mode", selection: $compressor.mode) {
+                ForEach(PhotoCompressor.Mode.allCases) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(compressor.isRunning)
+
+            if compressor.mode == .speedAndQuality {
+                LabeledContent("Quality") {
+                    Picker("Quality", selection: $compressor.quality) {
+                        ForEach(QualityLevel.allCases) { level in
+                            Text(level.label).tag(level)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                }
+                .disabled(compressor.isRunning)
+            }
+
             LabeledContent("Scale") {
                 Picker("Scale", selection: $compressor.scale) {
                     ForEach(OutputScale.allCases) { scale in
@@ -97,7 +118,9 @@ struct ContentView: View {
                 .fixedSize()
             }
             .disabled(compressor.isRunning)
-            Text("The smallest file the hardware encoder can make, at most 24 fps. Originals move to Recently Deleted once their compressed copies are saved; edited videos keep their edits.")
+            Text(compressor.mode.caption
+                 + (compressor.mode == .speedAndQuality ? " " + compressor.quality.caption : "")
+                 + " Originals move to Recently Deleted once their compressed copies are saved; edited videos keep their edits.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -241,7 +264,7 @@ private struct AccessBanner: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Full Photos access needed")
                     .font(.headline)
-                Text("FFmpui reads each video's original file and saves the compressed copy back to your library. Choose “Full Access” for Photos.")
+                Text("shrk reads each video's original file and saves the compressed copy back to your library. Choose “Full Access” for Photos.")
                     .font(.callout)
                 if PhotoLibrary.authorization == .notDetermined {
                     Button("Allow Access") { Task { await compressor.requestAccess() } }

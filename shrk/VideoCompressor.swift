@@ -1,6 +1,6 @@
 //
 //  VideoCompressor.swift
-//  FFmpui
+//  shrk
 //
 //  Compresses each queued video and keeps track of progress so the UI can
 //  show it:
@@ -41,6 +41,8 @@ final class VideoCompressor {
     enum Mode: String, CaseIterable, Identifiable {
         /// Apple's hardware encoder (shared VideoTranscoder, as on iPhone).
         case sizeAndSpeed
+        /// Apple's hardware encoder at a constant quality (as on iPhone).
+        case speedAndQuality
         /// x265, each video's quality setting found by a VMAF search.
         case sizeAndQuality
         /// x265, the smallest file possible.
@@ -51,6 +53,7 @@ final class VideoCompressor {
         var label: String {
             switch self {
             case .sizeAndSpeed: "Size + Speed"
+            case .speedAndQuality: "Speed + Quality"
             case .sizeAndQuality: "Size + Quality"
             case .size: "Size"
             }
@@ -60,6 +63,8 @@ final class VideoCompressor {
             switch self {
             case .sizeAndSpeed:
                 "The smallest file Apple's hardware encoder can make: fast, and the Mac stays cool. Frame rate capped at 24 fps. Same as the iPhone app."
+            case .speedAndQuality:
+                "Looks like the original, fast and cool: Apple's hardware encoder at the chosen quality. Same frame rate. Bigger than Size + Quality. Same as the iPhone app."
             case .sizeAndQuality:
                 "Looks like the original in as few bytes as possible: the best setting is found for each video. Same frame rate. Slow."
             case .size:
@@ -72,6 +77,7 @@ final class VideoCompressor {
         var scriptMode: String {
             switch self {
             case .sizeAndSpeed: "speed"
+            case .speedAndQuality: "speed-quality"
             case .sizeAndQuality: "quality"
             case .size: "size"
             }
@@ -79,7 +85,10 @@ final class VideoCompressor {
 
         /// Encoded by x265 on the CPU, where High priority makes a difference.
         /// (The hardware encoder runs in a system process at its own pace.)
-        var usesCPUEncoder: Bool { self != .sizeAndSpeed }
+        var usesCPUEncoder: Bool { self == .sizeAndQuality || self == .size }
+
+        /// Has a Quality menu (High / Medium / Low).
+        var hasQualityLevels: Bool { self == .speedAndQuality || self == .sizeAndQuality }
     }
 
     static let videoExtensions: Set<String> = ["mp4", "mov", "m4v"]
@@ -93,6 +102,7 @@ final class VideoCompressor {
         static let replaceOriginals = "replaceOriginals"
         static let mode = "mode"
         static let scale = "scale"
+        static let quality = "quality"
         static let highPriority = "highPriority"
     }
 
@@ -106,6 +116,10 @@ final class VideoCompressor {
     }
     var scale: OutputScale = .full {
         didSet { UserDefaults.standard.set(scale.rawValue, forKey: Key.scale) }
+    }
+    /// Speed + Quality and Size + Quality.
+    var quality: QualityLevel = .medium {
+        didSet { UserDefaults.standard.set(quality.rawValue, forKey: Key.quality) }
     }
     /// x265 modes only. On: all of the Mac's power, like the script in
     /// Terminal. Off: efficiency cores only (cool and quiet, but slower).
@@ -125,6 +139,7 @@ final class VideoCompressor {
         replaceOriginals = defaults.bool(forKey: Key.replaceOriginals)
         mode = defaults.string(forKey: Key.mode).flatMap(Mode.init(rawValue:)) ?? .sizeAndSpeed
         scale = OutputScale(rawValue: defaults.double(forKey: Key.scale)) ?? .full
+        quality = defaults.string(forKey: Key.quality).flatMap(QualityLevel.init(rawValue:)) ?? .medium
         highPriority = defaults.object(forKey: Key.highPriority) as? Bool ?? true
         refreshToolCheck()
     }
@@ -279,12 +294,15 @@ final class VideoCompressor {
 
         // 1. Encode
         let encoded: URL
-        if mode == .sizeAndSpeed {
-            guard let file = await encodeWithAVFoundation(item) else { return }
+        if !mode.usesCPUEncoder {
+            let settings: VideoTranscoder.Settings = mode == .speedAndQuality
+                ? .speedAndQuality(scale: scale.rawValue, level: quality)
+                : .sizeAndSpeed(scale: scale.rawValue)
+            guard let file = await encodeWithAVFoundation(item, settings: settings) else { return }
             encoded = file
         } else {
             let arguments = replace + ["--mode", mode.scriptMode, "--scale", scale.argument,
-                                       "--encode-only", "--", item.url.path]
+                                       "--vmaf", String(quality.vmaf), "--encode-only", "--", item.url.path]
             guard let file = await runScript(script, arguments: arguments, for: id, cpuHeavy: true) else {
                 update(id) { $0.phase = nil }
                 return
@@ -331,19 +349,18 @@ final class VideoCompressor {
         }
     }
 
-    /// Size + Speed: runs VideoTranscoder into the same hidden temp file name
-    /// the script would use. Returns nil (with the item's status set) on
-    /// failure or Stop.
-    private func encodeWithAVFoundation(_ item: VideoItem) async -> URL? {
+    /// Size + Speed and Speed + Quality: runs VideoTranscoder into the same
+    /// hidden temp file name the script would use. Returns nil (with the
+    /// item's status set) on failure or Stop.
+    private func encodeWithAVFoundation(_ item: VideoItem, settings: VideoTranscoder.Settings) async -> URL? {
         let id = item.id
         let source = item.url
         let name = source.deletingPathExtension().lastPathComponent
         let ext = source.pathExtension
         let tempName = replaceOriginals
-            ? ".\(name).ffmpui-tmp.\(ext)"
-            : ".\(name)_copy.ffmpui-tmp.\(ext)"
+            ? ".\(name).shrk-tmp.\(ext)"
+            : ".\(name)_copy.shrk-tmp.\(ext)"
         let destination = source.deletingLastPathComponent().appendingPathComponent(tempName)
-        let settings = VideoTranscoder.Settings.sizeAndSpeed(scale: scale.rawValue)
 
         let task = Task {
             try await VideoTranscoder.transcode(

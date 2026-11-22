@@ -1,6 +1,6 @@
 //
 //  MetadataCopier.swift
-//  FFmpui
+//  shrk
 //
 //  Copies the original video's metadata boxes, byte for byte, into a file
 //  just encoded from it (by AVFoundation, or ffmpeg on the Mac):

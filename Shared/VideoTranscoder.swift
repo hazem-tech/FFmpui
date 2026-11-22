@@ -1,6 +1,6 @@
 //
 //  VideoTranscoder.swift
-//  FFmpui
+//  shrk
 //
 //  Re-encodes a video to HEVC with AVFoundation (Apple's VideoToolbox
 //  hardware encoder): the "Size + Speed" mode of both apps (the smallest file

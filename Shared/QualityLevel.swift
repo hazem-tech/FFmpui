@@ -1,6 +1,6 @@
 //
 //  QualityLevel.swift
-//  FFmpui
+//  shrk
 //
 //  The "Quality" menu of the quality modes: how close to the original the
 //  compressed video should look, as a VMAF score (0–100, how alike two

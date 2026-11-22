@@ -1,14 +1,13 @@
-# FFmpui
+# shrk
 
-> FFmpui is not affiliated with, endorsed by, or part of the official [FFmpeg](https://ffmpeg.org) project.
-> It's a small, independent app that uses FFmpeg under the hood (on the Mac).
+*Formerly FFmpui.* On the Mac, shrk uses [FFmpeg](https://ffmpeg.org) under the hood; it isn't affiliated with the FFmpeg project.
 
-FFmpui compresses your videos to HEVC (H.265), as small as you want them. Unlike a plain `ffmpeg` command, it **keeps all of the original metadata**, copied byte for byte, so a compressed clip shows the same recorded date, location and camera details as the original. The audio is never re-encoded: every audio track is copied bit for bit.
+shrk compresses your videos to HEVC (H.265), as small as you want them. Unlike a plain `ffmpeg` command, it **keeps all of the original metadata**, copied byte for byte, so a compressed clip shows the same recorded date, location and camera details as the original. The audio is never re-encoded: every audio track is copied bit for bit.
 
 ## Features
 
 - **Simple UI:** add videos or a whole folder (subfolders too), or drag & drop them, then press **Start**.
-- **Three modes** (see [Modes](#modes)): **Size + Speed**, **Size + Quality** and **Size**.
+- **Four modes** (see [Modes](#modes)): **Size + Speed**, **Speed + Quality**, **Size + Quality** and **Size**, with a **Quality** level (High / Medium / Low) for the quality modes.
 - **Scale:** 1×, 0.5× or 0.25× of the original width and height, in any mode.
 - **Keep or replace:** by default the original is kept and the compressed file is saved next to it as `name_copy.mp4`. Turn on **Replace original files** to overwrite the originals instead (the Mac asks once when you turn it on, then remembers it). An original is only replaced after the new file has been checked (it must open and be the same length).
 - **Full metadata preservation:** the original's metadata is copied byte for byte by [`Shared/MetadataCopier.swift`](Shared/MetadataCopier.swift), the same code on Mac and iPhone:
@@ -20,7 +19,7 @@ FFmpui compresses your videos to HEVC (H.265), as small as you want them. Unlike
   - Rotation (the video isn't rotated twice)
   - All audio tracks, plus timecode, GoPro/DJI telemetry and other data tracks when the container supports them
   - macOS file **created** and **modified** dates, Finder tags and other extended attributes, and file permissions
-- **Progress for each file**, total space saved, Stop at any time (half-written files are cleaned up), and the Mac stays awake while it works. Your choices (mode, scale, Replace, High priority) are remembered.
+- **Progress for each file**, total space saved, Stop at any time (half-written files are cleaned up), and the Mac stays awake while it works. Your choices (mode, quality, scale, Replace, High priority) are remembered.
 
 ## Requirements
 
@@ -31,31 +30,34 @@ FFmpui compresses your videos to HEVC (H.265), as small as you want them. Unlike
   brew install ffmpeg
   ```
 
-- The app must run **without the App Sandbox**, because it launches `ffmpeg` and writes next to your videos. In Xcode, open the FFmpui target, go to **Signing & Capabilities** and remove **App Sandbox**. If the sandbox is still on, the app tells you.
+- The app must run **without the App Sandbox**, because it launches `ffmpeg` and writes next to your videos. In Xcode, open the shrk target, go to **Signing & Capabilities** and remove **App Sandbox**. If the sandbox is still on, the app tells you.
 
 ## Modes
 
-| | Size + Speed | Size + Quality | Size |
-|---|---|---|---|
-| Goal | the smallest file the **hardware** encoder makes, quickly and without heating the device | looks like the original, in as few bytes as possible | the smallest file possible, whatever it looks like |
-| Where | Mac and iPhone (same code: [`Shared/VideoTranscoder.swift`](Shared/VideoTranscoder.swift)) | Mac | Mac |
-| Encoder | Apple's VideoToolbox HEVC (media engine): lowest bitrate and quality, quantizer never below 51, no adaptive quantization (Mac), one keyframe, speed over quality, power-saving | x265, 10-bit, `slower` preset, `aq-mode=4:sao=0:psy-rd=1.0` (16% fewer bytes than the usual settings for the same VMAF); for each video, the highest CRF that still scores **VMAF ≥ 95** against the original | x265 tuned for the floor (no SAO, 4×4 transforms, wide motion search, one keyframe…) |
-| Frame rate | capped at 24 fps | unchanged | capped at 24 fps |
-| Speed | fast | slow (a few test encodes per video, then the real one) | fast |
+| | Size + Speed | Speed + Quality | Size + Quality | Size |
+|---|---|---|---|---|
+| Goal | the smallest file the **hardware** encoder makes, quickly and without heating the device | looks like the original, quickly and without heating the device | looks like the original, in as few bytes as possible | the smallest file possible, whatever it looks like |
+| Where | Mac and iPhone (same code: [`Shared/VideoTranscoder.swift`](Shared/VideoTranscoder.swift)) | Mac and iPhone (same code) | Mac | Mac |
+| Encoder | Apple's VideoToolbox HEVC (media engine): lowest bitrate and quality, quantizer never below 51, no adaptive quantization (Mac), one keyframe, speed over quality, power-saving | VideoToolbox HEVC at a constant quality for the chosen level (tuned to reach its VMAF score on the test clips), a keyframe every 10 s, power-saving | x265, 10-bit, `slower` preset, `aq-mode=4:sao=0:psy-rd=1.0` (16% fewer bytes than the usual settings for the same VMAF); for each video, the highest CRF that still reaches the chosen level's **VMAF** score against the original | x265 tuned for the floor (no SAO, 4×4 transforms, wide motion search, one keyframe…) |
+| Frame rate | capped at 24 fps | unchanged | unchanged | capped at 24 fps |
+| Speed | fast | fast | slow (a few test encodes per video, then the real one) | fast |
+
+**Quality** (Speed + Quality and Size + Quality): how close to the original, as a VMAF score (0–100, how alike two videos look). **High** = 97 (hard to tell apart even side by side), **Medium** = 95 (differences hard to notice in normal viewing), **Low** = 92 (slightly softer if you look for it). Speed + Quality files are bigger than Size + Quality ones at the same level: the hardware encoder needs more bits for the same look.
+
 
 - Videos at 24 fps or less keep their frame rate. HDR (HLG / PQ) videos stay 10-bit HDR in every mode (iPhone's extra Dolby Vision data isn't kept, as before).
 - **High priority** (Mac, x265 modes only): on, x265 uses all of the Mac's power; off, it runs on the efficiency cores only, so the Mac stays cool and quiet but compressing takes much longer. It isn't shown for Size + Speed: the hardware encoder runs in a system process at its own pace, so priority makes no difference there (that's also why the iPhone app has no such switch).
 - Size and Size + Speed use a single keyframe, so jumping around in a long video takes a moment longer.
-- Known limit of Size + Speed: on videos from non-Apple phones (Samsung, other Android phones), Apple's video framework drops the last ~44 ms of audio, because it assumes the encoder delay Apple's own AAC encoder adds. The audio itself is still copied, not re-encoded. iPhone videos, and the Size and Size + Quality modes, keep every bit of the audio.
+- Known limit of the hardware modes (Size + Speed, Speed + Quality): on videos from non-Apple phones (Samsung, other Android phones), Apple's video framework drops the last ~44 ms of audio, because it assumes the encoder delay Apple's own AAC encoder adds. The audio itself is still copied, not re-encoded. iPhone videos, and the x265 modes, keep every bit of the audio.
 - **How small?** On the sample iPhone clip (720p, 30 fps, 10.6 Mb/s, 7.1 MB), Size mode gives about 12 kb/s of video (less than a third of plain `-crf 51`) and Size + Speed about 100 kb/s (the hardware encoder's lowest bitrate alone gave about 460 kb/s); Size + Quality picks CRF 28 there, about 620 kb/s at VMAF 95. At these sizes the untouched audio is usually the biggest part of the file.
 
 How the settings were chosen, and how to re-check them, is in [Tests](#tests).
 
 ## iOS app
 
-The `FFmpui-iOS` target compresses videos from your **Photos library** on iPhone and iPad (iOS 26 or later), with the **Size + Speed** mode, the same code as on the Mac ([`Shared/VideoTranscoder.swift`](Shared/VideoTranscoder.swift)), so sizes and quality match.
+The `shrk-iOS` target compresses videos from your **Photos library** on iPhone and iPad (iOS 26 or later), with the **Size + Speed** and **Speed + Quality** modes, the same code as on the Mac ([`Shared/VideoTranscoder.swift`](Shared/VideoTranscoder.swift)), so sizes and quality match.
 
-- **Add Videos**, pick a **Scale**, then **Start**. Each video is replaced by its compressed version, saved under the same name. When the run ends, iOS asks once to delete the originals (apps can't skip that question); they stay in **Recently Deleted** for 30 days.
+- **Add Videos**, pick a **Mode** (and **Quality**) and a **Scale**, then **Start**. Each video is replaced by its compressed version, saved under the same name. When the run ends, iOS asks once to delete the originals (apps can't skip that question); they stay in **Recently Deleted** for 30 days.
 - **Edited videos** (trimmed, filtered, slow-motion ramps…): the edited version, as Photos shows it, is compressed, so the edit is kept (baked in) when the original is replaced.
 - **Metadata:** [`Shared/MetadataCopier.swift`](Shared/MetadataCopier.swift), the same code as on the Mac, copies the original file's metadata boxes into the new file byte for byte:
   - Apple Keys (creation date with time zone, GPS, make/model/software, lens, focal length, Live Photo ID)
@@ -78,7 +80,7 @@ Everything runs on GitHub Actions' Apple Silicon Macs on every push ([`encode-te
   - the **audio is bit-identical** to the source
   - Make, Model, creation date, GPS and file dates are kept, and HDR stays HDR
   - Size + Quality reaches its VMAF target
-- The apps' shared code (encoder and MetadataCopier) is built as a command-line tool ([`Tests/TranscoderHarness`](Tests/TranscoderHarness)), so every test takes the same steps as the app: the iPhone path, and the Mac path with the app's engine, [`FFmpui/compress_video.sh`](FFmpui/compress_video.sh), which encodes the x265 modes, checks the file and copies the file dates.
+- The apps' shared code (encoder and MetadataCopier) is built as a command-line tool ([`Tests/TranscoderHarness`](Tests/TranscoderHarness)), so every test takes the same steps as the app: the iPhone path, and the Mac path with the app's engine, [`shrk/compress_video.sh`](shrk/compress_video.sh), which encodes the x265 modes, checks the file and copies the file dates.
 - [`Tests/compare_metadata.sh`](Tests/compare_metadata.sh) lists every metadata tag of each test clip (including a Samsung phone video) that goes missing, changes or is added in each mode, in the run summary.
 - Each run's summary has a table of sizes, frame rates and VMAF scores.
 

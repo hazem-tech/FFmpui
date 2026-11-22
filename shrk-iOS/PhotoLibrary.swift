@@ -1,6 +1,6 @@
 //
 //  PhotoLibrary.swift
-//  FFmpui (iOS)
+//  shrk (iOS)
 //
 //  Photos access: reading a video's original file (or its edited version),
 //  saving the compressed copy as a new asset (with the original's date,
