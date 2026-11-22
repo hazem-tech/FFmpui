@@ -3,8 +3,9 @@
 //  FFmpui
 //
 //  Re-encodes a video to HEVC with AVFoundation (Apple's VideoToolbox
-//  hardware encoder). This is the "Size + Speed" mode of both apps: the
-//  smallest file the hardware encoder makes, quickly and without much heat.
+//  hardware encoder): the "Size + Speed" mode of both apps (the smallest file
+//  the hardware encoder makes, quickly and without much heat) and "Speed +
+//  Quality" (fast, and looks like the original).
 //
 //    • first video track → HEVC at the lowest bitrate, optionally scaled,
 //      frame rate capped at 24 fps, rotation flag kept (pixels not rotated)
@@ -78,10 +79,32 @@ nonisolated enum VideoTranscoder {
         /// areas). Off saves another ~10% when quality doesn't matter.
         /// (Mac only; iOS has no such setting.)
         var adaptiveQP = false
+        /// With `quality` but no `bitrate`: bits per pixel per frame to aim
+        /// for if the encoder has no constant-quality mode (Intel Macs).
+        var fallbackBitsPerPixel = 0.08
 
         /// Both apps' "Size + Speed" mode.
         static func sizeAndSpeed(scale: Double) -> Settings {
             Settings(scale: scale)
+        }
+
+        /// Both apps' "Speed + Quality" mode: the hardware encoder at a
+        /// constant quality, every frame kept, a keyframe every 10 s.
+        static func speedAndQuality(scale: Double, level: QualityLevel) -> Settings {
+            speedAndQuality(scale: scale, quality: level.encoderQuality,
+                            fallbackBitsPerPixel: level.fallbackBitsPerPixel)
+        }
+
+        static func speedAndQuality(scale: Double, quality: Double, fallbackBitsPerPixel: Double = 0.08) -> Settings {
+            var settings = Settings(scale: scale)
+            settings.maxFrameRate = nil
+            settings.bitrate = nil
+            settings.quality = quality
+            settings.keyFrames = .every(10)
+            settings.minFrameQP = nil
+            settings.adaptiveQP = true
+            settings.fallbackBitsPerPixel = fallbackBitsPerPixel
+            return settings
         }
     }
 
@@ -370,9 +393,6 @@ nonisolated enum VideoTranscoder {
         if let bitrate = settings.bitrate {
             compression[AVVideoAverageBitRateKey] = bitrate
         }
-        if let quality = settings.quality {
-            compression[AVVideoQualityKey] = quality
-        }
         if let outputRate {
             compression[AVVideoExpectedSourceFrameRateKey] = outputRate
         }
@@ -412,6 +432,27 @@ nonisolated enum VideoTranscoder {
         }
         guard writer.canApply(outputSettings: videoSettings, forMediaType: .video) else {
             throw Failure.unsupportedSettings
+        }
+
+        // Constant quality: Apple silicon and iPhones have it; without it,
+        // a quality-only setup aims for a bitrate instead.
+        var qualityNote = ""
+        if let quality = settings.quality {
+            var trialCompression = compression
+            trialCompression[AVVideoQualityKey] = quality
+            var trial = videoSettings
+            trial[AVVideoCompressionPropertiesKey] = trialCompression
+            if writer.canApply(outputSettings: trial, forMediaType: .video) {
+                compression = trialCompression
+                videoSettings = trial
+                qualityNote = String(format: ", quality %.2f", quality)
+            } else if settings.bitrate == nil {
+                let rate = outputRate ?? 30
+                let bitrate = Int(Double(width * height) * rate * settings.fallbackBitsPerPixel)
+                compression[AVVideoAverageBitRateKey] = bitrate
+                videoSettings[AVVideoCompressionPropertiesKey] = compression
+                qualityNote = ", no constant-quality mode here: \(bitrate / 1000) kb/s"
+            }
         }
 
         // Encoder hints that not every device / OS accepts: each is only
@@ -461,7 +502,7 @@ nonisolated enum VideoTranscoder {
             summary += String(format: ", %.3g → %.3g fps", frameRate, maxRate)
         }
         if settings.bitrate != nil { summary += ", lowest bitrate" }
-        if let quality = settings.quality { summary += String(format: ", quality %.2f", quality) }
+        summary += qualityNote
         switch settings.keyFrames {
         case .every(let seconds): summary += String(format: ", keyframe every %.3g s", seconds)
         case .single: summary += ", single keyframe"

@@ -12,6 +12,7 @@ on:
   push:
     paths:
       - Tests/tune.sh
+      - Tests/tune_speed_quality.sh
       - Tests/tune/**
       - Tests/run_transcoder.sh
       - Tests/TranscoderHarness/**
@@ -41,6 +42,7 @@ jobs:
       size: ${{ steps.list.outputs.size }}
       x265: ${{ steps.list.outputs.x265 }}
       speed: ${{ steps.list.outputs.speed }}
+      speedq: ${{ steps.list.outputs.speedq }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -52,13 +54,15 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ] && git cat-file -e "$before^{commit}" 2>/dev/null; then
             changed=$(git diff --name-only "$before" "${{ github.sha }}")
           else
-            changed=$'Tests/tune.sh\nTests/run_transcoder.sh'
+            changed=$'Tests/tune.sh\nTests/run_transcoder.sh\nTests/tune_speed_quality.sh'
           fi
           echo "$changed"
           if grep -qxE 'Tests/tune.sh|Tests/tune/size.txt' <<< "$changed"; then echo "size=true"; else echo "size=false"; fi >> "$GITHUB_OUTPUT"
           if grep -qxE 'Tests/tune.sh|Tests/tune/quality.txt' <<< "$changed"; then echo "x265=true"; else echo "x265=false"; fi >> "$GITHUB_OUTPUT"
           if grep -qE '^(Tests/run_transcoder.sh|Tests/TranscoderHarness/|Shared/VideoTranscoder.swift)' <<< "$changed"; then
             echo "speed=true"; else echo "speed=false"; fi >> "$GITHUB_OUTPUT"
+          if grep -qx 'Tests/tune_speed_quality.sh' <<< "$changed"; then
+            echo "speedq=true"; else echo "speedq=false"; fi >> "$GITHUB_OUTPUT"
 
   size:
     name: Size mode
@@ -124,3 +128,18 @@ jobs:
             Tests/run_transcoder.sh "$RUNNER_TEMP/fixtures/${{ matrix.fixture }}"
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  speed-quality:
+    name: Speed + Quality levels
+    needs: variants
+    if: needs.variants.outputs.speedq == 'true'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select newest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)"
+      - run: brew install ffmpeg exiftool
+      - run: Tests/run_transcoder.sh --build "$RUNNER_TEMP/h"
+      - run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"
+      - name: Encoder setting per VMAF target
+        run: Tests/tune_speed_quality.sh "$RUNNER_TEMP/h" "$RUNNER_TEMP/fixtures" | tee -a "$GITHUB_STEP_SUMMARY"
