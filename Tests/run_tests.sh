@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 #
-# run_tests.sh script <mode> <fixture>      compress_video.sh --mode size|quality
-# run_tests.sh harness <binary> <fixture>   the apps' shared Size + Speed
-#                                           encoder (Tests/TranscoderHarness):
-#                                           iOS path (MetadataCopier) and Mac
-#                                           path (compress_video.sh --encoded)
+# run_tests.sh script <mode> <fixture> <harness>
+#     the Mac app's Size / Size + Quality: compress_video.sh --encode-only,
+#     MetadataCopier (through the harness), compress_video.sh --encoded
+# run_tests.sh harness <harness> <fixture>
+#     the apps' shared Size + Speed encoder (Tests/TranscoderHarness):
+#     iPhone path (encode + MetadataCopier) and Mac path (encode +
+#     MetadataCopier + compress_video.sh --encoded)
 #
 # Encodes <fixture> at 1× and 0.5× (and 0.25× for the iPhone sample), checks
 # every result with check_output.sh and prints a Markdown table. Exits 1 if
@@ -15,9 +17,10 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 here=$(cd "$(dirname "$0")" && pwd)
 script="$here/../FFmpui/compress_video.sh"
 
-kind="${1:?usage: run_tests.sh script <mode> <fixture> | harness <binary> <fixture>}"
+kind="${1:?usage: run_tests.sh script <mode> <fixture> <harness> | harness <harness> <fixture>}"
 arg="${2:?}"
 fixture="${3:?}"
+harness="${4:-$arg}"
 base=$(basename "$fixture")
 name="${base%.*}"
 ext="${base##*.}"
@@ -53,11 +56,17 @@ for scale in "${scales[@]}"; do
       mode="$arg"
       dir=$(prepare "script-$scale")
       start=$(date +%s)
-      if ! bash "$script" --mode "$mode" --scale "$scale" "$dir/$base" > "$dir/log.txt" 2>&1; then
-        echo "FAIL [$base, $mode, ${scale}x]: compress_video.sh failed:" >&2
+      # The Mac app's steps: encode, metadata, finish.
+      bash "$script" --mode "$mode" --scale "$scale" --encode-only -- "$dir/$base" > "$dir/log.txt" 2>&1
+      encoded=$(sed -n 's/^@@ENCODED //p' "$dir/log.txt")
+      if [ -n "$encoded" ] && "$harness" "$dir/$base" "$encoded" --metadata-only >> "$dir/log.txt" 2>&1 \
+         && bash "$script" --encoded "$encoded" -- "$dir/$base" >> "$dir/log.txt" 2>&1; then
+        :
+      else
+        echo "FAIL [$base, $mode, ${scale}x]: compress_video.sh / MetadataCopier failed:" >&2
         grep -v '=' "$dir/log.txt" | tail -n 20 >&2
       fi
-      grep -E '^(Quality|Note|Warning)' "$dir/log.txt" >&2 || true
+      grep -E '^(Quality|Note|Warning|Metadata)' "$dir/log.txt" >&2 || true
       bash "$here/check_output.sh" "$dir/$base" "$dir/${name}_copy.$ext" "$mode" "$scale" "$(seconds_since "$start")" || failed=1
       # Size mode: a smaller scale must never give more video bytes.
       if [ "$mode" = "size" ] && [ -f "$dir/${name}_copy.$ext" ]; then
@@ -71,7 +80,7 @@ for scale in "${scales[@]}"; do
       fi
       ;;
     harness)
-      bin="$arg"
+      bin="$harness"
       # iOS: encode, then MetadataCopier (Photos sets the file dates there).
       dir=$(prepare "ios-$scale")
       start=$(date +%s)
@@ -81,10 +90,11 @@ for scale in "${scales[@]}"; do
       SKIP_FILE_DATE=1 bash "$here/check_output.sh" "$dir/$base" "$dir/${name}_copy.$ext" speed "$scale" \
         "$(seconds_since "$start")" | sed 's/| speed |/| speed (iOS) |/' || failed=1
 
-      # Mac: encode, then the script's checks / ExifTool metadata / file dates.
+      # Mac: encode, MetadataCopier, then the script's checks / file dates.
       dir=$(prepare "mac-$scale")
       start=$(date +%s)
-      "$bin" "$dir/$base" "$dir/.encoded.$ext" --scale "$scale" > "$dir/log.txt" 2>&1 \
+      { "$bin" "$dir/$base" "$dir/.encoded.$ext" --scale "$scale" \
+          && "$bin" "$dir/$base" "$dir/.encoded.$ext" --metadata-only; } > "$dir/log.txt" 2>&1 \
         || { echo "FAIL [$base, Mac path, ${scale}x]:" >&2; tail -n 20 "$dir/log.txt" >&2; }
       bash "$script" --encoded "$dir/.encoded.$ext" -- "$dir/$base" >> "$dir/log.txt" 2>&1 \
         || { echo "FAIL [$base, Mac path, ${scale}x]: compress_video.sh --encoded failed" >&2; grep -v '=' "$dir/log.txt" | tail -n 20 >&2; }

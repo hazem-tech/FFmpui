@@ -12,9 +12,8 @@
 //    • timecode / metadata / telemetry / subtitle tracks copied when the
 //      container accepts them, otherwise a second try with video + audio only
 //
-//  The original's metadata is copied afterwards: on the Mac by the script's
-//  ExifTool step (`compress_video.sh --encoded`), exactly as for the ffmpeg
-//  encoder; on iOS by MetadataCopier. Shared by both apps.
+//  The original's metadata is copied afterwards by MetadataCopier, on both
+//  apps. Shared by both apps.
 //
 
 import AVFoundation
@@ -498,9 +497,9 @@ nonisolated enum VideoTranscoder {
         if let extendedLanguage { input.extendedLanguageTag = extendedLanguage }
     }
 
-    /// Movie-level tags the container can hold. Afterwards ExifTool (Mac) or
-    /// MetadataCopier (iOS) copies the original's metadata boxes as well;
-    /// this is the baseline, plus the mirrored Apple Keys below.
+    /// Movie-level tags the container can hold. Afterwards MetadataCopier
+    /// copies the original's metadata boxes as well; this is the baseline,
+    /// plus the mirrored Apple Keys below.
     private static func containerMetadata(of asset: AVURLAsset, for fileType: AVFileType) async throws -> [AVMetadataItem] {
         let keySpaces: Set<AVMetadataKeySpace> = fileType == .mov
             ? [.quickTimeMetadata, .quickTimeUserData]

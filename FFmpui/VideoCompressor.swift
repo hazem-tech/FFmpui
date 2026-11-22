@@ -2,11 +2,15 @@
 //  VideoCompressor.swift
 //  FFmpui
 //
-//  Runs the bundled compress_video.sh script on each queued video and keeps
-//  track of progress so the UI can show it. "Size + Speed" encodes with the
-//  shared AVFoundation VideoTranscoder (like the iPhone app) and then lets the
-//  script check the file and copy the metadata; the other modes are encoded
-//  by the script's ffmpeg / x265.
+//  Compresses each queued video and keeps track of progress so the UI can
+//  show it:
+//    1. encode: Size + Speed with the shared VideoTranscoder (like the iPhone
+//       app); Size and Size + Quality with the bundled compress_video.sh
+//       (ffmpeg / x265, --encode-only)
+//    2. copy the original's metadata with the shared MetadataCopier (byte for
+//       byte, like the iPhone app)
+//    3. compress_video.sh --encoded: check it, copy Finder tags, permissions
+//       and file dates, and move it into place
 //
 
 import AVFoundation
@@ -19,7 +23,6 @@ struct VideoItem: Identifiable, Equatable {
         case working
         case done
         case failed(String)
-        case skipped(String)
     }
 
     let id = UUID()
@@ -84,7 +87,7 @@ final class VideoCompressor {
     /// Folders where Homebrew / MacPorts install command line tools.
     /// GUI apps don't get the shell's PATH, so we look in these explicitly.
     static let toolSearchPaths = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin", "/usr/bin"]
-    static let requiredTools = ["ffmpeg", "ffprobe", "exiftool"]
+    static let requiredTools = ["ffmpeg", "ffprobe"]
 
     private enum Key {
         static let replaceOriginals = "replaceOriginals"
@@ -272,22 +275,59 @@ final class VideoCompressor {
         appendLog("▶︎ \(item.url.path)")
 
         let mode = self.mode
-        var arguments = replaceOriginals ? ["--replace"] : []
+        let replace = replaceOriginals ? ["--replace"] : []
+
+        // 1. Encode
+        let encoded: URL
         if mode == .sizeAndSpeed {
-            // Encode here, then let the script check the result, copy the
-            // metadata / file attributes and move it into place.
-            guard let encoded = await encodeWithAVFoundation(item) else { return }
-            arguments += ["--encoded", encoded.path]
+            guard let file = await encodeWithAVFoundation(item) else { return }
+            encoded = file
         } else {
-            arguments += ["--mode", mode.scriptMode, "--scale", scale.argument]
+            let arguments = replace + ["--mode", mode.scriptMode, "--scale", scale.argument,
+                                       "--encode-only", "--", item.url.path]
+            guard let file = await runScript(script, arguments: arguments, for: id, cpuHeavy: true) else {
+                update(id) { $0.phase = nil }
+                return
+            }
+            encoded = file
+        }
+        update(id) { $0.phase = nil }
+
+        // 2. Metadata
+        await copyMetadata(from: item.url, to: encoded)
+        if stopRequested {
+            try? FileManager.default.removeItem(at: encoded)
+            update(id) {
+                $0.status = .waiting
+                $0.progress = 0
+            }
+            appendLog("■ Stopped")
+            return
         }
 
-        await runScript(script, arguments: arguments + ["--", item.url.path], for: id, mode: mode)
-        update(id) { $0.phase = nil }
+        // 3. Check, file attributes, move into place
+        await runScript(script, arguments: replace + ["--encoded", encoded.path, "--", item.url.path],
+                        for: id, cpuHeavy: false)
 
         if let output = items.first(where: { $0.id == id })?.outputURL,
            items.first(where: { $0.id == id })?.status == .done {
             await logResult(output, mode: mode)
+        }
+    }
+
+    /// The original's metadata, byte for byte (the same MetadataCopier as
+    /// the iPhone app): dates, Apple Keys (GPS, camera, lens …), UserData,
+    /// XMP, maker blocks, per-track metadata; it also fits the rotation
+    /// offset to a scaled picture.
+    private func copyMetadata(from source: URL, to output: URL) async {
+        let result = await Task.detached { () -> Result<[String], Error> in
+            Result { try MetadataCopier.copy(from: source, to: output) }
+        }.value
+        switch result {
+        case .success(let notes):
+            if !notes.isEmpty { appendLog("Metadata: " + notes.joined(separator: ", ")) }
+        case .failure(let error):
+            appendLog("Metadata: only the basic tags were kept (\(error.localizedDescription)).")
         }
     }
 
@@ -337,8 +377,10 @@ final class VideoCompressor {
     }
 
     /// Runs compress_video.sh for one file and turns its output into status,
-    /// progress and log lines.
-    private func runScript(_ script: URL, arguments: [String], for id: UUID, mode: Mode) async {
+    /// progress and log lines. With --encode-only, returns the encoded file
+    /// (and leaves the status to the caller); nil if it failed or was stopped.
+    @discardableResult
+    private func runScript(_ script: URL, arguments: [String], for id: UUID, cpuHeavy: Bool) async -> URL? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = [script.path] + arguments
@@ -347,19 +389,20 @@ final class VideoCompressor {
         process.standardError = pipe
         process.standardInput = FileHandle.nullDevice
         // Only x265 is CPU-heavy: there, low priority keeps it on the
-        // efficiency cores. The rest (ExifTool, checks) runs at full speed.
-        process.qualityOfService = mode.usesCPUEncoder && !highPriority ? .background : .userInitiated
+        // efficiency cores. The rest (checks, moving files) runs at full speed.
+        process.qualityOfService = cpuHeavy && !highPriority ? .background : .userInitiated
 
         do {
             try process.run()
         } catch {
             update(id) { $0.status = .failed("Could not start: \(error.localizedDescription)") }
-            return
+            return nil
         }
         currentProcess = process
 
         var duration: Double = 0
         var result: VideoItem.Status?
+        var encoded: URL?
 
         do {
             for try await line in pipe.fileHandleForReading.bytes.lines {
@@ -386,10 +429,10 @@ final class VideoCompressor {
                         }
                     }
                     result = .done
+                } else if line.hasPrefix("@@ENCODED ") {
+                    encoded = URL(fileURLWithPath: String(line.dropFirst("@@ENCODED ".count)))
                 } else if line.hasPrefix("@@FILE_FAIL ") {
                     result = .failed(String(line.dropFirst("@@FILE_FAIL ".count)))
-                } else if line.hasPrefix("@@FILE_SKIP ") {
-                    result = .skipped(String(line.dropFirst("@@FILE_SKIP ".count)))
                 } else if line.hasPrefix("@@") || Self.isFFmpegProgressLine(line) {
                     continue
                 } else if !line.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -405,13 +448,18 @@ final class VideoCompressor {
         }
         currentProcess = nil
 
+        if let encoded {
+            if !stopRequested && result == nil && process.terminationStatus == 0 { return encoded }
+            try? FileManager.default.removeItem(at: encoded)
+        }
+
         if stopRequested && result == nil {
             update(id) {
                 $0.status = .waiting
                 $0.progress = 0
             }
             appendLog("■ Stopped")
-            return
+            return nil
         }
 
         let finalStatus = result ?? .failed("Stopped unexpectedly (exit code \(process.terminationStatus))")
@@ -419,6 +467,7 @@ final class VideoCompressor {
             $0.status = finalStatus
             if finalStatus == .done { $0.progress = 1 }
         }
+        return nil
     }
 
     /// One line per finished file: mode, file size and the video track's

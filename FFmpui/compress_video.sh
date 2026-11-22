@@ -1,47 +1,44 @@
 #!/usr/bin/env bash
 #
 # compress_video.sh — the FFmpui Mac app's engine (run by the app, one video
-# at a time). It:
+# at a time). The app calls it once or twice per video:
 #
-#   1. encodes the video (Size and Size + Quality modes, with x265), or takes
-#      the file the app already encoded (Size + Speed)
-#   2. checks the result opens and is just as long
-#   3. carries over *everything* from the original that can be carried over:
-#      • every audio track (untouched), timecode, GoPro/DJI telemetry and
-#        other data tracks
-#      • camera make / model / serial, lens make / model, focal length, ISO,
-#        aperture, shutter, GPS location, Apple "Keys" tags (Live Photo IDs,
-#        software, location, creation date with time zone, …), XMP, UserData
-#      • the QuickTime internal dates (movie / track / media create & modify)
-#      • the rotation flag (pixels are NOT rotated, so nothing is rotated twice)
-#      • the macOS file dates (created + modified), Finder tags / extended
-#        attributes, and file permissions
-#   4. moves it into place
+#   Size / Size + Quality:
+#     1. compress_video.sh --mode size|quality [--scale <f>] --encode-only -- <video>
+#        encodes with x265, checks the result opens and is just as long, and
+#        prints "@@ENCODED <file>"
+#     2. the app copies the original's metadata into <file> (MetadataCopier,
+#        byte for byte, as on iPhone)
+#     3. compress_video.sh --encoded <file> -- <video>  (below)
+#   Size + Speed: the app encodes (VideoTranscoder) and copies the metadata
+#     itself, then runs step 3.
 #
-# How the app calls it:
-#   compress_video.sh [--replace] --mode size|quality [--scale <f>] -- <video>
-#   compress_video.sh [--replace] --encoded <file> -- <video>
+#   compress_video.sh --encoded <file> -- <video>
+#     checks <file> again, gives it the original's Finder tags / other
+#     extended attributes, permissions and created / modified dates, and moves
+#     it into place ("<name>_copy.<ext>" next to the original, or over it with
+#     --replace). <file> is deleted if anything fails.
 #
 #   --mode size       x265: the smallest file possible, whatever it looks like;
 #                     frame rate capped at 24
 #   --mode quality    x265, 10-bit: for each video, the smallest file that still
 #                     scores VMAF 95 against the original; same frame rate. Slow.
 #   --scale <f>       width and height factor: 1 (default), 0.5 or 0.25
-#   --encoded <file>  <file> was already encoded by the app from <video> (Size +
-#                     Speed). It is checked, gets all the metadata / file
-#                     attributes, and is moved into place (deleted if anything
-#                     fails).
-#   --replace         overwrite the original (default: keep it and write
-#                     "<name>_copy.<ext>" next to it)
+#   --replace         overwrite the original (default: keep it)
 #
-# Requires: ffmpeg, ffprobe, exiftool (brew install ffmpeg exiftool). Quality
-# mode uses ffmpeg's libvmaf (included in Homebrew's ffmpeg); without it, a
-# fixed quality setting is used.
+# Every audio track is copied untouched, as are timecode, telemetry and other
+# data tracks when the container allows; the rotation flag is kept (pixels
+# are not rotated).
+#
+# Requires: ffmpeg, ffprobe (brew install ffmpeg). Quality mode uses ffmpeg's
+# libvmaf (included in Homebrew's ffmpeg); without it, a fixed quality setting
+# is used.
 #
 # Lines for the app start with "@@":
 #   @@FILE_START <path>
 #   @@DURATION <seconds>
 #   @@PHASE <text>            what the script is doing (e.g. the quality search)
+#   @@ENCODED <path>          --encode-only: the encoded, checked file
 #   @@FILE_DONE <input-bytes> <output-bytes> <output-path>
 #   @@FILE_FAIL <reason>
 # ffmpeg's own "-progress" lines (out_time_us=…) are also printed to stdout.
@@ -55,6 +52,7 @@ MODE=""
 SCALE="1"
 REPLACE=0
 ENCODED=""
+ENCODE_ONLY=0
 INPUTS=()
 SUFFIX="_copy"
 VMAF_TARGET=95
@@ -67,6 +65,7 @@ while [ $# -gt 0 ]; do
     --scale) shift; SCALE="${1:?--scale needs a value}" ;;
     --replace) REPLACE=1 ;;
     --encoded) shift; ENCODED="${1:?--encoded needs a file}" ;;
+    --encode-only) ENCODE_ONLY=1 ;;
     -h|--help) usage; exit 0 ;;
     --) shift; INPUTS+=("$@"); break ;;
     -*) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -97,11 +96,11 @@ if [ -n "$ENCODED" ] && [ ! -f "$ENCODED" ]; then
   exit 1
 fi
 
-for tool in ffmpeg ffprobe exiftool; do
+for tool in ffmpeg ffprobe; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     [ -n "$ENCODED" ] && rm -f "$ENCODED"
-    echo "@@FILE_FAIL Missing '$tool'. Install it with: brew install ffmpeg exiftool"
-    echo "Error: '$tool' not found. Install it with: brew install ffmpeg exiftool" >&2
+    echo "@@FILE_FAIL Missing '$tool'. Install it with: brew install ffmpeg"
+    echo "Error: '$tool' not found. Install it with: brew install ffmpeg" >&2
     exit 3
   fi
 done
@@ -121,7 +120,6 @@ cleanup() {
 trap cleanup EXIT
 trap 'echo "Stopped." >&2; exit 143' INT TERM
 
-EXIFTOOL=(exiftool -q -q -m -api LargeFileSupport=1 -api QuickTimeUTC=1)
 
 file_size() { wc -c < "$1" | tr -d ' '; }
 
@@ -362,7 +360,7 @@ encode() {
   local common_out=(-map_metadata 0 -map_chapters 0
                     -c:a copy -c:d copy -c:s copy
                     "${filter[@]+"${filter[@]}"}" "${VIDEO_ARGS[@]}"
-                    -movflags +use_metadata_tags)
+)
 
   # Attempt 1: main video + all audio + all data tracks (timecode, GoPro GPMF,
   # DJI/Apple metadata, …) + subtitles.
@@ -379,75 +377,6 @@ encode() {
   run_ffmpeg "${common_in[@]}" \
     -map 0:V:0 -map '0:a?' \
     "${common_out[@]}" "$dst"
-}
-
-copy_metadata() {
-  local src="$1" dst="$2"
-  # Test hook (Tests/compare_metadata.sh): leave the metadata to MetadataCopier.
-  [ -n "${FFMPUI_SKIP_METADATA:-}" ] && return 0
-
-  # Copy every writable tag in its original group (QuickTime Keys / ItemList /
-  # UserData, XMP, track & media dates, rotation, GPS, Apple IDs, …).
-  # Then also mirror the camera / lens / exposure / GPS info into standard
-  # Apple Keys + XMP tags, because many cameras (Sony, Canon, DJI, GoPro…)
-  # store them in maker-specific boxes that can't be written back as-is, and
-  # this way Finder, Photos, Lightroom, DaVinci etc. still see them.
-  "${EXIFTOOL[@]}" -overwrite_original \
-    -tagsFromFile "$src" -all:all -unsafe \
-    '-Keys:Make<Make' '-Keys:Model<Model' '-Keys:Software<Software' \
-    '-Keys:CreationDate<CreationDate' \
-    '-Keys:GPSCoordinates<GPSCoordinates' \
-    '-UserData:Make<Make' '-UserData:Model<Model' \
-    '-XMP-tiff:Make<Make' '-XMP-tiff:Model<Model' \
-    '-XMP-exifEX:BodySerialNumber<SerialNumber' \
-    '-XMP-exifEX:LensMake<LensMake' '-XMP-exifEX:LensModel<LensModel' \
-    '-XMP-exifEX:LensModel<LensType' \
-    '-XMP-exifEX:LensSerialNumber<LensSerialNumber' \
-    '-XMP-aux:Lens<LensModel' \
-    '-XMP-exif:FocalLength<FocalLength' \
-    '-XMP-exif:FocalLengthIn35mmFormat<FocalLengthIn35mmFormat' \
-    '-XMP-exif:FNumber<FNumber' '-XMP-exif:ExposureTime<ExposureTime' \
-    '-XMP-exif:ISO<ISO' \
-    '-XMP-exif:GPSLatitude<GPSLatitude' '-XMP-exif:GPSLongitude<GPSLongitude' \
-    '-XMP-exif:GPSAltitude<GPSAltitude' \
-    '-XMP-photoshop:DateCreated<CreationDate' \
-    "$dst"
-}
-
-# The rotation matrix of the video track carries an offset that depends on the
-# frame size (e.g. "0 1 0 -1 0 0 720 0 1" for a 1280×720 portrait clip). After
-# scaling, ffmpeg still writes the original offset, which would shift the
-# picture in some players, so recompute it for the new size.
-fix_rotation_offset() {
-  local dst="$1" group="" line matrix width height fixed
-  while IFS= read -r line; do
-    case "$line" in
-      *"[Track"*"]"*vide*) group=$(printf '%s' "$line" | sed -n 's/^\[\(Track[0-9]*\)\].*/\1/p'); break ;;
-    esac
-  done < <("${EXIFTOOL[@]}" -a -G1 -n -HandlerType "$dst" 2>/dev/null)
-  [ -n "$group" ] || return 0
-
-  matrix=$("${EXIFTOOL[@]}" -n -s3 "-$group:MatrixStructure" "$dst" 2>/dev/null)
-  width=$("${EXIFTOOL[@]}" -n -s3 "-$group:ImageWidth" "$dst" 2>/dev/null)
-  height=$("${EXIFTOOL[@]}" -n -s3 "-$group:ImageHeight" "$dst" 2>/dev/null)
-  [ -n "$matrix" ] && [ -n "$width" ] && [ -n "$height" ] || return 0
-
-  # Matrix "a b u c d v tx ty w" maps (x, y) to (a·x + c·y + tx, b·x + d·y + ty).
-  # The right offset moves the rotated frame's corner back to (0, 0).
-  fixed=$(printf '%s\n' "$matrix" | awk -v W="$width" -v H="$height" '{
-      a = $1; b = $2; c = $4; d = $5
-      split("0 " W " 0 " W, xs, " "); split("0 0 " H " " H, ys, " ")
-      for (i = 1; i <= 4; i++) {
-        x = a * xs[i] + c * ys[i]; y = b * xs[i] + d * ys[i]
-        if (i == 1 || x < minx) minx = x
-        if (i == 1 || y < miny) miny = y
-      }
-      tx = -minx; ty = -miny
-      if (tx == $7 && ty == $8) exit 1
-      printf "%s %s %s %s %s %s %g %g %s", $1, $2, $3, $4, $5, $6, tx, ty, $9
-    }') || return 0
-  "${EXIFTOOL[@]}" -overwrite_original "-$group:MatrixStructure=$fixed" "$dst" \
-    || echo "Warning: could not update the rotation of '$(basename "$dst")'." >&2
 }
 
 copy_file_attributes() {
@@ -473,11 +402,17 @@ copy_file_attributes() {
   [ -n "${mode:-}" ] && chmod "$mode" "$dst" 2>/dev/null
 
   # File dates — this must be the very last write to the file: exactly the
-  # same created/modified dates as the original file.
-  touch -r "$src" "$dst"
-  "${EXIFTOOL[@]}" -overwrite_original -tagsFromFile "$src" \
-    '-FileCreateDate<FileCreateDate' '-FileModifyDate<FileModifyDate' \
-    "$dst"
+  # same created and modified dates as the original. On macOS, giving a file
+  # a modified date earlier than its created date moves the created date too,
+  # so first set the original's created date as the modified date, then the
+  # real modified date.
+  if [ "$(uname)" = "Darwin" ]; then
+    local created
+    created=$(stat -f %B "$src" 2>/dev/null)
+    if [ -n "$created" ] && [ "$created" -gt 0 ]; then
+      touch -m -t "$(date -r "$created" +%Y%m%d%H%M.%S)" "$dst"
+    fi
+  fi
   touch -r "$src" "$dst"
 }
 
@@ -531,22 +466,22 @@ process_file() {
     return 1
   fi
 
-  # 3. Metadata (camera, lens, GPS, dates, …)
-  if ! copy_metadata "$src" "$work"; then
-    echo "Warning: exiftool reported a problem copying metadata for '$base'." >&2
+  # --encode-only: hand the file to the app for the metadata (step 3 is its
+  # job), then it runs us again with --encoded.
+  if [ "$ENCODE_ONLY" -eq 1 ]; then
+    CURRENT_TMP=""
+    echo "@@ENCODED $work"
+    return 0
   fi
 
-  # 4. Rotation offset for the new frame size (no change when it is right)
-  fix_rotation_offset "$work"
-
-  # 5. Extended attributes, permissions and file dates
+  # 3. Extended attributes, permissions and file dates
   copy_file_attributes "$src" "$work"
 
   local in_size out_size
   in_size=$(file_size "$src")
   out_size=$(file_size "$work")
 
-  # 6. Move into place (a rename keeps the dates we just set)
+  # 4. Move into place (a rename keeps the dates we just set)
   if ! mv -f "$work" "$final"; then
     rm -f "$work"; CURRENT_TMP=""
     echo "@@FILE_FAIL Could not write $final"

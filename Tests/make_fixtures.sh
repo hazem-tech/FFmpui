@@ -6,6 +6,8 @@
 # (Tests/Fixtures/IMG_6758.mov: 1280×720 H.264, 30 fps, rotated, AAC):
 #
 #   IMG_6758.mov   the sample itself
+#   samsung.mp4    a Samsung phone video (committed as is: Android-style
+#                  metadata, recorded date only in the movie header)
 #   hlg60.mov      10-bit HLG HEVC at 60 fps (like an iPhone HDR video), with GPS
 #   clip.mp4       the sample in an MP4 container, with GPS
 #   film23.mov     23.976 fps H.264 (below the 24 fps cap, so it must stay as is)
@@ -30,6 +32,7 @@ gps() {
 }
 
 cp -p "$sample" "$out/IMG_6758.mov"
+cp -p "$here/Fixtures/samsung.mp4" "$out/samsung.mp4"
 
 ff -noautorotate -i "$sample" -map 0:v:0 -map 0:a \
    -filter:v "fps=60,format=yuv420p10le" \

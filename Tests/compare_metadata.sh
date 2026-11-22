@@ -2,14 +2,15 @@
 #
 # compare_metadata.sh <harness> <fixture>
 #
-# Compresses <fixture> four ways and lists, for each, every metadata tag that
-# is missing, different or added compared with the original
-# (Tests/compare_metadata.py):
+# Compresses <fixture> the way the apps do and lists, for each, every
+# metadata tag that is missing, different or added compared with the
+# original (Tests/compare_metadata.py):
 #
-#   1. Size + Speed, metadata by ExifTool         (the Mac app today)
-#   2. Size + Speed, metadata by MetadataCopier   (the iPhone app today)
-#   3. Size, metadata by ExifTool                 (the Mac app today)
-#   4. Size, metadata by MetadataCopier           (proposed for the Mac)
+#   1. Size + Speed on the Mac    (encode, MetadataCopier, compress_video.sh --encoded)
+#   2. Size + Speed on the iPhone (encode, MetadataCopier)
+#   3. Size on the Mac            (compress_video.sh --encode-only, MetadataCopier,
+#                                  compress_video.sh --encoded); Size + Quality
+#                                  takes the same steps
 #
 # <harness> is Tests/TranscoderHarness, built by run_transcoder.sh --build.
 # Prints Markdown. Never fails the job: it's a report.
@@ -34,27 +35,26 @@ prepare() {
   printf '%s' "$work/$1"
 }
 
-d=$(prepare speed-exiftool)
-"$bin" "$d/$base" "$d/.encoded.$ext" > "$d/log.txt" 2>&1
-bash "$script" --encoded "$d/.encoded.$ext" -- "$d/$base" >> "$d/log.txt" 2>&1
+d=$(prepare speed-mac)
+{ "$bin" "$d/$base" "$d/.encoded.$ext" && "$bin" "$d/$base" "$d/.encoded.$ext" --metadata-only \
+  && bash "$script" --encoded "$d/.encoded.$ext" -- "$d/$base"; } > "$d/log.txt" 2>&1
 
-d=$(prepare speed-copier)
+d=$(prepare speed-iphone)
 "$bin" "$d/$base" "$d/${name}_copy.$ext" --copy-metadata > "$d/log.txt" 2>&1
 
-d=$(prepare size-exiftool)
-bash "$script" --mode size -- "$d/$base" > "$d/log.txt" 2>&1
+d=$(prepare size-mac)
+bash "$script" --mode size --encode-only -- "$d/$base" > "$d/log.txt" 2>&1
+encoded=$(sed -n 's/^@@ENCODED //p' "$d/log.txt")
+if [ -n "$encoded" ]; then
+  { "$bin" "$d/$base" "$encoded" --metadata-only && bash "$script" --encoded "$encoded" -- "$d/$base"; } >> "$d/log.txt" 2>&1
+fi
 
-d=$(prepare size-copier)
-FFMPUI_SKIP_METADATA=1 bash "$script" --mode size -- "$d/$base" > "$d/log.txt" 2>&1
-"$bin" "$d/$base" "$d/${name}_copy.$ext" --metadata-only >> "$d/log.txt" 2>&1
-
-for run in speed-exiftool speed-copier size-exiftool size-copier; do
-  grep -E '^(Metadata|FAILED|Note|Warning)' "$work/$run/log.txt" | sed "s/^/$run: /" >&2 || true
+for run in speed-mac speed-iphone size-mac; do
+  grep -E '^(Metadata|FAILED|Note|Warning|@@FILE_FAIL)' "$work/$run/log.txt" | sed "s/^/$run: /" >&2 || true
 done
 
 python3 "$here/compare_metadata.py" "$fixture" \
-  "Size + Speed, ExifTool (Mac today)=$work/speed-exiftool/${name}_copy.$ext" \
-  "Size + Speed, MetadataCopier (iPhone today)=$work/speed-copier/${name}_copy.$ext" \
-  "Size, ExifTool (Mac today)=$work/size-exiftool/${name}_copy.$ext" \
-  "Size, MetadataCopier (proposed for the Mac)=$work/size-copier/${name}_copy.$ext"
+  "Size + Speed, Mac=$work/speed-mac/${name}_copy.$ext" \
+  "Size + Speed, iPhone=$work/speed-iphone/${name}_copy.$ext" \
+  "Size and Size + Quality, Mac=$work/size-mac/${name}_copy.$ext"
 exit 0

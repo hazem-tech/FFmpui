@@ -298,8 +298,6 @@ private struct VideoRow: View {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
         case .failed:
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
-        case .skipped:
-            Image(systemName: "forward.fill").foregroundStyle(.secondary)
         }
     }
 
@@ -321,8 +319,6 @@ private struct VideoRow: View {
             return percent > 0 ? "\(sizes) (−\(percent)%)" : sizes
         case .failed(let reason):
             return reason
-        case .skipped(let reason):
-            return "Skipped: \(reason)"
         }
     }
 }
@@ -333,7 +329,7 @@ private struct MissingToolsBanner: View {
     let missing: [String]
     let onRecheck: () -> Void
 
-    private let command = "brew install ffmpeg exiftool"
+    private let command = "brew install ffmpeg"
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {

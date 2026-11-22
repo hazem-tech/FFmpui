@@ -52,12 +52,19 @@ jobs:
       fail-fast: false
       matrix:
         mode: [size, quality]
-        fixture: [IMG_6758.mov, hlg60.mov, clip.mp4, film23.mov]
+        fixture: [IMG_6758.mov, samsung.mp4, hlg60.mov, clip.mp4, film23.mov]
     steps:
       - uses: actions/checkout@v5
 
+      - name: Select newest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)"
+
+      # The app needs only ffmpeg; ExifTool is for reading tags in the checks.
       - name: Install tools
         run: brew install ffmpeg exiftool
+
+      - name: Build the harness (MetadataCopier)
+        run: Tests/run_transcoder.sh --build "$RUNNER_TEMP/transcoder-harness"
 
       - name: Make test clips
         run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"
@@ -65,7 +72,7 @@ jobs:
       - name: Compress and check
         run: |
           echo "### ${{ matrix.mode }} · ${{ matrix.fixture }}" >> "$GITHUB_STEP_SUMMARY"
-          Tests/run_tests.sh script ${{ matrix.mode }} "$RUNNER_TEMP/fixtures/${{ matrix.fixture }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          Tests/run_tests.sh script ${{ matrix.mode }} "$RUNNER_TEMP/fixtures/${{ matrix.fixture }}" "$RUNNER_TEMP/transcoder-harness" | tee -a "$GITHUB_STEP_SUMMARY"
 
   transcoder:
     name: Shared encoder (iOS + Mac) · ${{ matrix.fixture }}
@@ -73,7 +80,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        fixture: [IMG_6758.mov, hlg60.mov, clip.mp4, film23.mov]
+        fixture: [IMG_6758.mov, samsung.mp4, hlg60.mov, clip.mp4, film23.mov]
     steps:
       - uses: actions/checkout@v5
 
@@ -108,7 +115,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        fixture: [IMG_6758.mov, hlg60.mov, clip.mp4, film23.mov, android.mp4]
+        fixture: [IMG_6758.mov, samsung.mp4, hlg60.mov, clip.mp4, film23.mov, android.mp4]
     steps:
       - uses: actions/checkout@v5
 

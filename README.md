@@ -1,9 +1,9 @@
 # FFmpui
 
 > FFmpui is not affiliated with, endorsed by, or part of the official [FFmpeg](https://ffmpeg.org) project.
-> It's a small, independent app that uses FFmpeg (and ExifTool) under the hood.
+> It's a small, independent app that uses FFmpeg under the hood (on the Mac).
 
-FFmpui compresses your videos to HEVC (H.265), as small as you want them. Unlike a plain `ffmpeg` command, it **keeps all of the original metadata**, so a compressed clip still looks the same in Finder, Photos, Lightroom or DaVinci Resolve. The audio is never re-encoded: every audio track is copied bit for bit.
+FFmpui compresses your videos to HEVC (H.265), as small as you want them. Unlike a plain `ffmpeg` command, it **keeps all of the original metadata**, copied byte for byte, so a compressed clip shows the same recorded date, location and camera details as the original. The audio is never re-encoded: every audio track is copied bit for bit.
 
 ## Features
 
@@ -11,7 +11,7 @@ FFmpui compresses your videos to HEVC (H.265), as small as you want them. Unlike
 - **Three modes** (see [Modes](#modes)): **Size + Speed**, **Size + Quality** and **Size**.
 - **Scale:** 1×, 0.5× or 0.25× of the original width and height, in any mode.
 - **Keep or replace:** by default the original is kept and the compressed file is saved next to it as `name_copy.mp4`. Turn on **Replace original files** to overwrite the originals instead (the Mac asks once when you turn it on, then remembers it). An original is only replaced after the new file has been checked (it must open and be the same length).
-- **Full metadata preservation:**
+- **Full metadata preservation:** the original's metadata is copied byte for byte by [`Shared/MetadataCopier.swift`](Shared/MetadataCopier.swift), the same code on Mac and iPhone:
   - Camera make, model and serial number
   - Lens make, model and serial number, plus focal length, aperture, shutter speed and ISO
   - GPS location
@@ -28,10 +28,10 @@ FFmpui compresses your videos to HEVC (H.265), as small as you want them. Unlike
 - [Homebrew](https://brew.sh) packages:
 
   ```bash
-  brew install ffmpeg exiftool
+  brew install ffmpeg
   ```
 
-- The app must run **without the App Sandbox**, because it launches `ffmpeg`/`exiftool` and writes next to your videos. In Xcode, open the FFmpui target, go to **Signing & Capabilities** and remove **App Sandbox**. If the sandbox is still on, the app tells you.
+- The app must run **without the App Sandbox**, because it launches `ffmpeg` and writes next to your videos. In Xcode, open the FFmpui target, go to **Signing & Capabilities** and remove **App Sandbox**. If the sandbox is still on, the app tells you.
 
 ## Modes
 
@@ -56,7 +56,7 @@ The `FFmpui-iOS` target compresses videos from your **Photos library** on iPhone
 
 - **Add Videos**, pick a **Scale**, then **Start**. Each video is replaced by its compressed version, saved under the same name. When the run ends, iOS asks once to delete the originals (apps can't skip that question); they stay in **Recently Deleted** for 30 days.
 - **Edited videos** (trimmed, filtered, slow-motion ramps…): the edited version, as Photos shows it, is compressed, so the edit is kept (baked in) when the original is replaced.
-- **Metadata:** iOS can't run ExifTool, so [`Shared/MetadataCopier.swift`](Shared/MetadataCopier.swift) copies the original file's metadata boxes into the new file byte for byte:
+- **Metadata:** [`Shared/MetadataCopier.swift`](Shared/MetadataCopier.swift), the same code as on the Mac, copies the original file's metadata boxes into the new file byte for byte:
   - Apple Keys (creation date with time zone, GPS, make/model/software, lens, focal length, Live Photo ID)
   - UserData, XMP and iTunes tags
   - camera maker blocks (Canon, Sony, GoPro, DJI, …)
@@ -77,7 +77,8 @@ Everything runs on GitHub Actions' Apple Silicon Macs on every push ([`encode-te
   - the **audio is bit-identical** to the source
   - Make, Model, creation date, GPS and file dates are kept, and HDR stays HDR
   - Size + Quality reaches its VMAF target
-- The apps' shared encoder is built as a command-line tool ([`Tests/TranscoderHarness`](Tests/TranscoderHarness)) and tested both ways: the iPhone path (MetadataCopier) and the Mac path (the app's engine, [`FFmpui/compress_video.sh`](FFmpui/compress_video.sh), which also checks the file and copies the metadata).
+- The apps' shared code (encoder and MetadataCopier) is built as a command-line tool ([`Tests/TranscoderHarness`](Tests/TranscoderHarness)), so every test takes the same steps as the app: the iPhone path, and the Mac path with the app's engine, [`FFmpui/compress_video.sh`](FFmpui/compress_video.sh), which encodes the x265 modes, checks the file and copies the file dates.
+- [`Tests/compare_metadata.sh`](Tests/compare_metadata.sh) lists every metadata tag of each test clip (including a Samsung phone video) that goes missing, changes or is added in each mode, in the run summary.
 - Each run's summary has a table of sizes, frame rates and VMAF scores.
 
 Settings were picked with [`tune.yml`](.github/workflows/tune.yml) (run it from the Actions tab): [`Tests/tune.sh`](Tests/tune.sh) compares x265 settings for Size (total bytes) and Size + Quality (bytes at VMAF 95), and [`Tests/run_transcoder.sh`](Tests/run_transcoder.sh) compares Size + Speed variations on the runner's hardware encoder.

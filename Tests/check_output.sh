@@ -12,7 +12,7 @@
 #     otherwise unchanged
 #   • every audio stream bit-for-bit identical to the source
 #   • recorded date (QuickTime and Apple), Make, Model and GPS kept; file
-#     modification date kept
+#     created (macOS) and modified dates kept
 #     (unless SKIP_FILE_DATE is set)
 #   • HDR (HLG / PQ) sources stay 10-bit with the same color tags
 #   • smaller than the source
@@ -120,6 +120,9 @@ for tag_name in QuickTime:CreateDate CreationDate Make Model GPSLatitude GPSLong
 done
 if [ -z "${SKIP_FILE_DATE:-}" ]; then   # iOS path: Photos sets the dates
   [ "$(mtime "$src")" = "$(mtime "$out")" ] || fail "file modification date not kept"
+  if [ "$(uname)" = "Darwin" ]; then
+    [ "$(stat -f %B "$src")" = "$(stat -f %B "$out")" ] || fail "file created date not kept"
+  fi
 fi
 
 # HDR
