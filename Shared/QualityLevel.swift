@@ -46,10 +46,16 @@ nonisolated enum QualityLevel: String, CaseIterable, Identifiable, Sendable {
 
     /// Speed + Quality: the hardware encoder's constant-quality setting (0…1)
     /// that reaches `vmaf` on the test clips (Tests/tune_speed_quality.sh).
+    /// Needed per clip for 97 / 95 / 92: iPhone 0.600 / 0.570 / 0.527,
+    /// 23.976 fps 0.597 / 0.568 / 0.525, Samsung 0.731 / 0.677 / 0.611, HDR
+    /// 0.844 / 0.665 / 0.576. One setting has to fit every video, so the
+    /// hardest clip decides, except for High on HDR: VMAF levels off around
+    /// 97 there (it isn't made for HDR), and following it would make every
+    /// other video 3–5× bigger; 0.74 gives HDR about 96.3.
     var encoderQuality: Double {
         switch self {
-        case .high: 0.85
-        case .medium: 0.75
+        case .high: 0.74
+        case .medium: 0.68
         case .low: 0.62
         }
     }
