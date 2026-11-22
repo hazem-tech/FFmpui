@@ -11,7 +11,8 @@
 #   • frame rate: speed/size modes cap > 24 fps sources at 24 (≥ 23);
 #     otherwise unchanged
 #   • every audio stream bit-for-bit identical to the source
-#   • Make, Model, creation date and GPS kept; file modification date kept
+#   • recorded date (QuickTime and Apple), Make, Model and GPS kept; file
+#     modification date kept
 #     (unless SKIP_FILE_DATE is set)
 #   • HDR (HLG / PQ) sources stay 10-bit with the same color tags
 #   • smaller than the source
@@ -109,7 +110,9 @@ if [ -n "$(ffprobe -v error -select_streams a -show_entries stream=index -of csv
 fi
 
 # Metadata
-for tag_name in Make Model CreationDate GPSLatitude GPSLongitude; do
+# QuickTime:CreateDate is the recorded date every camera writes (Android
+# phones only write this one); CreationDate is Apple's, with the time zone.
+for tag_name in QuickTime:CreateDate CreationDate Make Model GPSLatitude GPSLongitude; do
   v_src=$(exiftool -n -s3 "-$tag_name" "$src" 2>/dev/null | head -n1)
   [ -n "$v_src" ] || continue
   v_out=$(exiftool -n -s3 "-$tag_name" "$out" 2>/dev/null | head -n1)
