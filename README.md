@@ -46,6 +46,7 @@ FFmpui compresses your videos to HEVC (H.265), as small as you want them. Unlike
 - Videos at 24 fps or less keep their frame rate. HDR (HLG / PQ) videos stay 10-bit HDR in every mode (iPhone's extra Dolby Vision data isn't kept, as before).
 - **High priority** (Mac, x265 modes only): on, x265 uses all of the Mac's power; off, it runs on the efficiency cores only, so the Mac stays cool and quiet but compressing takes much longer. It isn't shown for Size + Speed: the hardware encoder runs in a system process at its own pace, so priority makes no difference there (that's also why the iPhone app has no such switch).
 - Size and Size + Speed use a single keyframe, so jumping around in a long video takes a moment longer.
+- Known limit of Size + Speed: on videos from non-Apple phones (Samsung, other Android phones), Apple's video framework drops the last ~44 ms of audio, because it assumes the encoder delay Apple's own AAC encoder adds. The audio itself is still copied, not re-encoded. iPhone videos, and the Size and Size + Quality modes, keep every bit of the audio.
 - **How small?** On the sample iPhone clip (720p, 30 fps, 10.6 Mb/s, 7.1 MB), Size mode gives about 12 kb/s of video (less than a third of plain `-crf 51`) and Size + Speed about 100 kb/s (the hardware encoder's lowest bitrate alone gave about 460 kb/s); Size + Quality picks CRF 28 there, about 620 kb/s at VMAF 95. At these sizes the untouched audio is usually the biggest part of the file.
 
 How the settings were chosen, and how to re-check them, is in [Tests](#tests).

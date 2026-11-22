@@ -103,15 +103,28 @@ else
     || fail "frame rate $fo, expected $fs"
 fi
 
-# Audio: identical packets
+# Audio: identical packets. One known, accepted exception (Size + Speed,
+# AVFoundation): on AAC audio without its own edit list (Samsung and other
+# Android phones), Apple's writer assumes its 2112-sample encoder delay and
+# cuts the last 2112 samples (~44 ms): every packet is still identical, the
+# last two are dropped and one is trimmed.
 audio_hash() { ffmpeg -nostdin -v error -i "$1" -map 0:a -c copy -f streamhash -hash sha256 - 2>/dev/null; }
+packets() { ffmpeg -nostdin -v error -i "$1" -map 0:a:0 -c copy -f framemd5 - 2>/dev/null | grep -v '^#'; }
 if [ -n "$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "$src")" ]; then
   if [ "$(audio_hash "$src")" != "$(audio_hash "$out")" ]; then
-    fail "audio is not bit-identical to the source"
-    # Show how: per-packet timing, size and hash, first differences.
-    packets() { ffmpeg -nostdin -v error -i "$1" -map 0:a:0 -c copy -f framemd5 - 2>/dev/null | grep -v '^#'; }
-    echo "  audio packets: source $(packets "$src" | wc -l | tr -d ' '), output $(packets "$out" | wc -l | tr -d ' ')" >&2
-    diff <(packets "$src") <(packets "$out") | head -n 12 | sed 's/^/  /' >&2
+    src_packets=$(packets "$src")
+    out_packets=$(packets "$out" | cut -d, -f1-6)
+    n_src=$(printf '%s\n' "$src_packets" | wc -l | tr -d ' ')
+    n_out=$(printf '%s\n' "$out_packets" | wc -l | tr -d ' ')
+    if [ "$mode" = "speed" ] && [ "$n_out" -le "$n_src" ] && [ $((n_src - n_out)) -le 3 ] \
+       && [ "$(printf '%s\n' "$src_packets" | head -n "$n_out")" = "$out_packets" ]; then
+      echo "Note [$name, ${scale}x]: audio identical except the last ~44 ms (Apple's AAC end trim; known)" >&2
+    else
+      fail "audio is not bit-identical to the source"
+      # Show how: per-packet timing, size and hash, first differences.
+      echo "  audio packets: source $n_src, output $(packets "$out" | wc -l | tr -d ' ')" >&2
+      diff <(packets "$src") <(packets "$out") | head -n 12 | sed 's/^/  /' >&2
+    fi
   fi
 fi
 
