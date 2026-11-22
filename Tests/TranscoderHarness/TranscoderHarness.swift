@@ -24,6 +24,9 @@
 //    --metadata-only     don't encode: only copy the source's metadata into
 //                        the existing <output> with MetadataCopier
 //    --encoders          only list the HEVC encoders VideoToolbox has
+//    --inspect-audio <f> only print how AVFoundation sees <f>'s audio: the
+//                        track's segments and every sample buffer's timing
+//                        and trim attachments
 //
 
 import AVFoundation
@@ -36,6 +39,10 @@ struct TranscoderHarness {
         var args = Array(CommandLine.arguments.dropFirst())
         if args.contains("--encoders") {
             listEncoders()
+            return
+        }
+        if let index = args.firstIndex(of: "--inspect-audio"), index + 1 < args.count {
+            await inspectAudio(URL(fileURLWithPath: args[index + 1]))
             return
         }
         guard args.count >= 2 else {
@@ -118,6 +125,48 @@ struct TranscoderHarness {
         let sourceSize = (try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         print(String(format: "Done in %.1f s: %@ → %@ bytes", seconds, "\(sourceSize)", "\(size)"))
         print(String(format: "SECONDS=%.2f", seconds))
+    }
+
+    /// How AVFoundation sees a file's audio tracks: segments (edit lists) and
+    /// the sample buffers a passthrough reader delivers, with their trims.
+    static func inspectAudio(_ url: URL) async {
+        do {
+            let asset = AVURLAsset(url: url)
+            print("asset duration: \(try await asset.load(.duration).seconds) s")
+            for track in try await asset.loadTracks(withMediaType: .audio) {
+                let (scale, range, segments) = try await track.load(.naturalTimeScale, .timeRange, .segments)
+                print("audio track \(track.trackID): timescale \(scale), timeRange \(range.start.seconds) + \(range.duration.seconds) s")
+                for segment in segments {
+                    let map = segment.timeMapping
+                    print("  segment empty=\(segment.isEmpty) source \(map.source.start.value)/\(map.source.start.timescale) "
+                        + "+ \(map.source.duration.value)/\(map.source.duration.timescale) → target \(map.target.start.seconds) "
+                        + "+ \(map.target.duration.seconds) s")
+                }
+                let reader = try AVAssetReader(asset: asset)
+                let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+                reader.add(output)
+                reader.startReading()
+                var buffers = 0, samples = 0
+                var lines: [String] = []
+                while let buffer = output.copyNextSampleBuffer() {
+                    buffers += 1
+                    let count = CMSampleBufferGetNumSamples(buffer)
+                    samples += count
+                    let start = CMGetAttachment(buffer, key: kCMSampleBufferAttachmentKey_TrimDurationAtStart, attachmentModeOut: nil)
+                    let end = CMGetAttachment(buffer, key: kCMSampleBufferAttachmentKey_TrimDurationAtEnd, attachmentModeOut: nil)
+                    let line = "  buffer \(buffers): pts \(CMSampleBufferGetPresentationTimeStamp(buffer).seconds) "
+                        + "dur \(CMSampleBufferGetDuration(buffer).seconds) packets \(count)"
+                        + (start != nil ? " trimStart=\(String(describing: start!))" : "")
+                        + (end != nil ? " trimEnd=\(String(describing: end!))" : "")
+                    if buffers <= 3 || start != nil || end != nil { print(line) }
+                    lines.append(line)
+                }
+                for line in lines.suffix(3) { print(line) }
+                print("  total: \(buffers) buffers, \(samples) packets, reader status \(reader.status.rawValue)")
+            }
+        } catch {
+            print("FAILED: \(error.localizedDescription)")
+        }
     }
 
     /// Which HEVC encoders VideoToolbox offers, and whether they are hardware.

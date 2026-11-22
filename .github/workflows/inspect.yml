@@ -1,0 +1,31 @@
+name: Inspect audio
+
+# Diagnostic: how AVFoundation reads and writes an audio track (segments,
+# sample buffer trims, edit lists), on the Samsung test clip.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/inspect.yml
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  inspect:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select newest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)"
+      - name: Build the harness
+        run: Tests/run_transcoder.sh --build "$RUNNER_TEMP/h"
+      - name: Inspect
+        run: |
+          f=Tests/Fixtures/samsung.mp4
+          echo "### Original, as AVFoundation reads it"; "$RUNNER_TEMP/h" --inspect-audio "$f"
+          "$RUNNER_TEMP/h" "$f" "$RUNNER_TEMP/out.mp4" > /dev/null
+          echo "### Size + Speed output, as AVFoundation reads it"; "$RUNNER_TEMP/h" --inspect-audio "$RUNNER_TEMP/out.mp4"
+          echo "### Edit lists"; python3 Tests/inspect_edits.py "$f" "$RUNNER_TEMP/out.mp4"
