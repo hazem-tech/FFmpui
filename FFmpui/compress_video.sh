@@ -383,6 +383,8 @@ encode() {
 
 copy_metadata() {
   local src="$1" dst="$2"
+  # Test hook (Tests/compare_metadata.sh): leave the metadata to MetadataCopier.
+  [ -n "${FFMPUI_SKIP_METADATA:-}" ] && return 0
 
   # Copy every writable tag in its original group (QuickTime Keys / ItemList /
   # UserData, XMP, track & media dates, rotation, GPS, Apple IDs, …).

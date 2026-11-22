@@ -21,6 +21,8 @@
 //    --adaptive-qp       leave SpatialAdaptiveQPLevel on (default: off)
 //    --copy-metadata     then copy the source's metadata with MetadataCopier
 //                        (what the iOS app does)
+//    --metadata-only     don't encode: only copy the source's metadata into
+//                        the existing <output> with MetadataCopier
 //    --encoders          only list the HEVC encoders VideoToolbox has
 //
 
@@ -46,6 +48,7 @@ struct TranscoderHarness {
 
         var settings = VideoTranscoder.Settings.sizeAndSpeed(scale: 1)
         var copyMetadata = false
+        var metadataOnly = false
         while !args.isEmpty {
             let option = args.removeFirst()
             switch option {
@@ -67,10 +70,22 @@ struct TranscoderHarness {
             case "--min-qp": settings.minFrameQP = Int(args.removeFirst()).flatMap { $0 > 0 ? $0 : nil }
             case "--adaptive-qp": settings.adaptiveQP = true
             case "--copy-metadata": copyMetadata = true
+            case "--metadata-only": metadataOnly = true
             default:
                 print("Unknown option \(option)")
                 exit(2)
             }
+        }
+
+        if metadataOnly {
+            do {
+                let notes = try MetadataCopier.copy(from: source, to: output)
+                print("Metadata: " + notes.joined(separator: ", "))
+            } catch {
+                print("FAILED: metadata copy: \(error.localizedDescription)")
+                exit(1)
+            }
+            return
         }
 
         listEncoders()

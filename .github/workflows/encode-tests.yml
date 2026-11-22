@@ -102,6 +102,45 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           Tests/run_tests.sh harness "$RUNNER_TEMP/transcoder-harness" "$RUNNER_TEMP/fixtures/${{ matrix.fixture }}" | tee -a "$GITHUB_STEP_SUMMARY"
 
+  metadata:
+    name: Metadata comparison · ${{ matrix.fixture }}
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        fixture: [IMG_6758.mov, hlg60.mov, clip.mp4, film23.mov, android.mp4]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select newest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)"
+
+      - name: Install tools
+        run: brew install ffmpeg exiftool
+
+      - name: Build the harness
+        run: Tests/run_transcoder.sh --build "$RUNNER_TEMP/transcoder-harness"
+
+      - name: Make test clips
+        run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"
+
+      # Android-style metadata (make, model and location as UserData, plus
+      # the Android version), as Samsung and other Android phones write it.
+      - name: Android-style clip
+        if: matrix.fixture == 'android.mp4'
+        run: |
+          f="$RUNNER_TEMP/fixtures/android.mp4"
+          ffmpeg -nostdin -loglevel error -y -noautorotate -i Tests/Fixtures/IMG_6758.mov -map 0:v:0 -map 0:a \
+            -c copy -map_metadata -1 -metadata creation_time=2026-11-20T21:42:37Z "$f"
+          exiftool -q -m -overwrite_original '-UserData:Make=samsung' '-UserData:Model=SM-S918B' \
+            '-UserData:GPSCoordinates=40.7128, -74.0060, 10' '-Keys:AndroidVersion=14' "$f"
+          touch -r Tests/Fixtures/IMG_6758.mov "$f"
+
+      - name: Compare
+        run: |
+          echo "### Metadata · ${{ matrix.fixture }}" >> "$GITHUB_STEP_SUMMARY"
+          Tests/compare_metadata.sh "$RUNNER_TEMP/transcoder-harness" "$RUNNER_TEMP/fixtures/${{ matrix.fixture }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
   shellcheck:
     name: ShellCheck
     runs-on: macos-26
