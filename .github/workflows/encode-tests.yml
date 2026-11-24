@@ -26,6 +26,7 @@ jobs:
   probe:
     name: What the runner can do
     runs-on: macos-26
+    timeout-minutes: 45
     steps:
       - name: Install tools
         run: brew install ffmpeg exiftool
@@ -48,6 +49,7 @@ jobs:
   script:
     name: Script · ${{ matrix.mode }} · ${{ matrix.fixture }}
     runs-on: macos-26
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -77,6 +79,7 @@ jobs:
   transcoder:
     name: Shared encoder (iOS + Mac) · ${{ matrix.fixture }}
     runs-on: macos-26
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -111,6 +114,7 @@ jobs:
   metadata:
     name: Metadata comparison · ${{ matrix.fixture }}
     runs-on: macos-26
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -150,6 +154,7 @@ jobs:
   shellcheck:
     name: ShellCheck
     runs-on: macos-26
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       - run: brew install shellcheck

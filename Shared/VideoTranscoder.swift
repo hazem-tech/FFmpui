@@ -177,12 +177,15 @@ nonisolated enum VideoTranscoder {
     }
 
     /// One track's sample flow, from the reader's provider to the writer's
-    /// receiver. Each one is used by a single task only.
+    /// receiver, with the sample read but not yet accepted by the writer.
+    /// Only the one pump loop of an encode uses it.
     private final class TrackFlow: @unchecked Sendable {
         let provider: AVAssetReaderOutput.Provider<CMReadySampleBuffer<CMSampleBuffer.DynamicContent>>
         let receiver: AVAssetWriterInput.SampleBufferReceiver
         let isVideo: Bool
         let maxFrameRate: Double?
+        var pending: CMReadySampleBuffer<CMSampleBuffer.DynamicContent>?
+        var isFinished = false
 
         init(provider: sending AVAssetReaderOutput.Provider<CMReadySampleBuffer<CMSampleBuffer.DynamicContent>>,
              receiver: sending AVAssetWriterInput.SampleBufferReceiver,
@@ -191,24 +194,6 @@ nonisolated enum VideoTranscoder {
             self.receiver = receiver
             self.isVideo = isVideo
             self.maxFrameRate = maxFrameRate
-        }
-    }
-
-    /// Lets the track tasks stop the reader and writer when one of them fails
-    /// or the run is cancelled, so no other task waits forever on the writer.
-    /// AVAssetReader / AVAssetWriter cancel calls are thread-safe.
-    private final class Session: @unchecked Sendable {
-        let reader: AVAssetReader
-        let writer: AVAssetWriter
-
-        init(reader: AVAssetReader, writer: AVAssetWriter) {
-            self.reader = reader
-            self.writer = writer
-        }
-
-        func cancel() {
-            reader.cancelReading()
-            if writer.status == .writing { writer.cancelWriting() }
         }
     }
 
@@ -297,11 +282,11 @@ nonisolated enum VideoTranscoder {
         }
         writer.startSession(atSourceTime: .zero)
 
-        let session = Session(reader: reader, writer: writer)
         do {
-            try await pump(flows, session: session, duration: duration, progress: progress)
+            try await pump(flows, duration: duration, progress: progress)
         } catch {
-            session.cancel()
+            reader.cancelReading()
+            if writer.status == .writing { writer.cancelWriting() }
             if error is CancellationError || Task.isCancelled { throw CancellationError() }
             if reader.status == .failed {
                 throw Failure.readFailed(reader.error?.localizedDescription ?? error.localizedDescription)
@@ -316,69 +301,65 @@ nonisolated enum VideoTranscoder {
         progress(1)
     }
 
-    /// Feeds every track to the writer, one task per track. Each append
-    /// waits until the writer wants more of that track, so the writer
-    /// interleaves the tracks itself.
+    /// Feeds every track to the writer, round-robin, so the writer can
+    /// interleave them: each track gets samples until its input isn't ready
+    /// (appendImmediately says no), then it's the next track's turn. Checks
+    /// for cancellation between passes.
     private static func pump(
         _ flows: [TrackFlow],
-        session: Session,
-        duration: Double,
-        progress: @escaping @Sendable (Double) -> Void
-    ) async throws {
-        try await withTaskCancellationHandler {
-            try await withThrowingTaskGroup(of: Void.self) { group in
-                for flow in flows {
-                    group.addTask {
-                        do {
-                            try await copySamples(flow, duration: duration, progress: progress)
-                        } catch {
-                            // Unblocks the other tracks' appends.
-                            session.cancel()
-                            throw error
-                        }
-                    }
-                }
-                try await group.waitForAll()
-            }
-        } onCancel: {
-            session.cancel()
-        }
-    }
-
-    /// Copies one track's samples. Video: reports progress and applies the
-    /// frame-rate cap (keeps the first frame of every 1/rate-second slot,
-    /// like ffmpeg's fps filter; kept frames keep their own timestamps).
-    private static func copySamples(
-        _ flow: TrackFlow,
         duration: Double,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
         var lastReported = -1.0
+        // Frame rate cap: keep the first frame of every 1/rate-second slot,
+        // like ffmpeg's fps filter. Kept frames keep their own timestamps.
         var firstVideoTime: Double?
         var lastSlot = Int.min
 
-        while let sample = try await flow.provider.next() {
+        while flows.contains(where: { !$0.isFinished }) {
             try Task.checkCancellation()
-            if flow.isVideo {
-                let seconds = sample.presentationTimeStamp.seconds
-                if duration > 0 {
-                    let value = min(max(seconds / duration, 0), 1)
-                    if value - lastReported >= 0.002 {
-                        lastReported = value
-                        progress(value)
+            var didWork = false
+
+            for flow in flows where !flow.isFinished {
+                while true {
+                    if flow.pending == nil {
+                        guard let sample = try await flow.provider.next() else {
+                            flow.receiver.finish()
+                            flow.isFinished = true
+                            break
+                        }
+                        if flow.isVideo {
+                            let seconds = sample.presentationTimeStamp.seconds
+                            if duration > 0 {
+                                let value = min(max(seconds / duration, 0), 1)
+                                if value - lastReported >= 0.002 {
+                                    lastReported = value
+                                    progress(value)
+                                }
+                            }
+                            if let rate = flow.maxFrameRate, seconds.isFinite {
+                                let start = firstVideoTime ?? seconds
+                                firstVideoTime = start
+                                let slot = Int(((seconds - start) * rate + 1e-6).rounded(.down))
+                                if slot == lastSlot {
+                                    didWork = true
+                                    continue  // dropped
+                                }
+                                lastSlot = slot
+                            }
+                        }
+                        flow.pending = sample
                     }
-                }
-                if let rate = flow.maxFrameRate, seconds.isFinite {
-                    let start = firstVideoTime ?? seconds
-                    firstVideoTime = start
-                    let slot = Int(((seconds - start) * rate + 1e-6).rounded(.down))
-                    if slot == lastSlot { continue }  // dropped
-                    lastSlot = slot
+                    guard let sample = flow.pending, try flow.receiver.appendImmediately(sample) else { break }
+                    flow.pending = nil
+                    didWork = true
                 }
             }
-            try await flow.receiver.append(sample)
+
+            if !didWork {
+                try await Task.sleep(for: .milliseconds(5))
+            }
         }
-        flow.receiver.finish()
     }
 
     // MARK: - Settings
