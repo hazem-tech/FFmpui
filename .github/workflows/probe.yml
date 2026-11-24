@@ -7,48 +7,14 @@ on:
 
 jobs:
   probe:
-    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-27, macos-latest, macos-26-xlarge, macos-27-arm64]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
       - name: Xcodes
         run: |
-          ls -d /Applications/Xcode*.app
-          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)"
-          xcodebuild -version
-          xcodebuild -showsdks
           sw_vers
-      - name: AVFoundation API
-        run: |
-          SDK=$(xcrun --sdk macosx --show-sdk-path)
-          find "$SDK" -path '*AVFoundation.framework*' -name '*.swiftinterface' | head
-          for f in $(find "$SDK" -path '*AVFoundation.framework*' -name 'arm64e-apple-macos.swiftinterface'); do
-            grep -n -B2 -A6 -E "outputProvider|inputReceiver|SampleBufferReceiver|struct Provider|class Provider|func start\(\)|func next\(|appendImmediately|func finish|CMReadySampleBuffer|PixelBufferReceiver" "$f" | head -600
-          done
-      - name: CoreMedia ready buffer API
-        run: |
-          SDK=$(xcrun --sdk macosx --show-sdk-path)
-          for f in $(find "$SDK" -path '*CoreMedia.framework*' -name 'arm64e-apple-macos.swiftinterface'); do
-            grep -n -A3 -E "CMReadySampleBuffer|withUnsafeSampleBuffer|DynamicContent" "$f" | head -300
-          done
-      - name: Build Mac (all warnings)
-        continue-on-error: true
-        run: |
-          xcodebuild -project shrk.xcodeproj -target shrk -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=NO build > mac.log 2>&1 || echo FAILED
-          grep -E "(warning|error):" mac.log | sort -u
-      - name: Build iOS (all warnings)
-        continue-on-error: true
-        run: |
-          xcodebuild -project shrk.xcodeproj -target shrk-iOS -sdk iphonesimulator -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO build > ios.log 2>&1 || echo FAILED
-          grep -E "(warning|error):" ios.log | sort -u
-      - name: Harness (all warnings)
-        continue-on-error: true
-        run: Tests/run_transcoder.sh --build "$RUNNER_TEMP/h" 2>&1 | grep -E "(warning|error):" | sort -u
-      - name: Python warnings
-        continue-on-error: true
-        run: |
-          for f in Tests/*.py Config/make_icon.py; do python3 -W error -m py_compile "$f" && echo "ok $f"; done
-      - name: ShellCheck
-        continue-on-error: true
-        run: brew install shellcheck >/dev/null && shellcheck shrk/compress_video.sh Tests/*.sh .github/scripts/*.sh 2>&1 | tail -50
+          ls -d /Applications/Xcode*.app
