@@ -36,12 +36,16 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project shrk.xcodeproj -target shrk-iOS -sdk iphonesimulator -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build-ios.log
+            CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=NO build 2>&1 | tee build-ios.log
           test -d build/Debug-iphonesimulator/shrk-iOS.app
 
+      # Xcode's App Intents step logs "Metadata extraction skipped" as a
+      # warning for every app without App Intents; that one is just a note.
       - name: No warnings
         run: |
-          if grep -hE "(warning|error):" build.log build-ios.log | sort -u | tee warnings.txt | grep -q .; then
+          if grep -hE "(warning|error):" build.log build-ios.log \
+               | grep -v "appintentsmetadataprocessor.*Metadata extraction skipped" \
+               | sort -u | tee warnings.txt | grep -q .; then
             {
               echo "### Build warnings"
               echo '```'

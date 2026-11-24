@@ -6,7 +6,7 @@ name: Release
 
 on:
   push:
-    branches: [main, claude/fervent-darwin-6ea2wn]  # TEMP: branch entry removed after testing
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -108,7 +108,7 @@ jobs:
       # artifact instead of a release.
       - name: Keep as artifact (not main)
         if: github.ref != 'refs/heads/main'
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: shrk-${{ steps.version.outputs.tag }}-macOS
           path: |
