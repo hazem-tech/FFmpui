@@ -44,7 +44,7 @@ jobs:
       speed: ${{ steps.list.outputs.speed }}
       speedq: ${{ steps.list.outputs.speedq }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - id: list
@@ -70,7 +70,7 @@ jobs:
     if: needs.variants.outputs.size == 'true'
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - run: brew install ffmpeg exiftool
       - run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"
       - run: Tests/tune.sh size "$RUNNER_TEMP/fixtures" | tee -a "$GITHUB_STEP_SUMMARY"
@@ -85,7 +85,7 @@ jobs:
       matrix:
         variant: ${{ fromJSON(needs.variants.outputs.quality) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - run: brew install ffmpeg exiftool
       - run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"
       - name: Bytes at VMAF 95
@@ -104,9 +104,9 @@ jobs:
       matrix:
         fixture: [IMG_6758.mov, hlg60.mov, long63.mov]
     steps:
-      - uses: actions/checkout@v5
-      - name: Select newest Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)"
+      - uses: actions/checkout@v6
+      - name: Select Xcode
+        run: .github/scripts/select-xcode.sh
       - run: brew install ffmpeg exiftool
       - run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"
       # 63 s without cuts (the sample forward, then backward, 6 times), long
@@ -135,9 +135,9 @@ jobs:
     if: needs.variants.outputs.speedq == 'true'
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v5
-      - name: Select newest Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)"
+      - uses: actions/checkout@v6
+      - name: Select Xcode
+        run: .github/scripts/select-xcode.sh
       - run: brew install ffmpeg exiftool
       - run: Tests/run_transcoder.sh --build "$RUNNER_TEMP/h"
       - run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"

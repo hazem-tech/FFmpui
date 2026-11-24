@@ -167,12 +167,49 @@ nonisolated enum VideoTranscoder {
 
     // MARK: - One attempt
 
+    /// The decoder output and encoder input of one track, before reading starts.
     private struct Pair {
         let output: AVAssetReaderTrackOutput
         let input: AVAssetWriterInput
         let isVideo: Bool
         /// Video only: keep at most this many frames per second.
         var maxFrameRate: Double?
+    }
+
+    /// One track's sample flow, from the reader's provider to the writer's
+    /// receiver. Each one is used by a single task only.
+    private final class TrackFlow: @unchecked Sendable {
+        let provider: AVAssetReaderOutput.Provider<CMReadySampleBuffer<CMSampleBuffer.DynamicContent>>
+        let receiver: AVAssetWriterInput.SampleBufferReceiver
+        let isVideo: Bool
+        let maxFrameRate: Double?
+
+        init(provider: sending AVAssetReaderOutput.Provider<CMReadySampleBuffer<CMSampleBuffer.DynamicContent>>,
+             receiver: sending AVAssetWriterInput.SampleBufferReceiver,
+             isVideo: Bool, maxFrameRate: Double?) {
+            self.provider = provider
+            self.receiver = receiver
+            self.isVideo = isVideo
+            self.maxFrameRate = maxFrameRate
+        }
+    }
+
+    /// Lets the track tasks stop the reader and writer when one of them fails
+    /// or the run is cancelled, so no other task waits forever on the writer.
+    /// AVAssetReader / AVAssetWriter cancel calls are thread-safe.
+    private final class Session: @unchecked Sendable {
+        let reader: AVAssetReader
+        let writer: AVAssetWriter
+
+        init(reader: AVAssetReader, writer: AVAssetWriter) {
+            self.reader = reader
+            self.writer = writer
+        }
+
+        func cancel() {
+            reader.cancelReading()
+            if writer.status == .writing { writer.cancelWriting() }
+        }
     }
 
     private static func encode(
@@ -201,8 +238,6 @@ nonisolated enum VideoTranscoder {
         log(summary)
         guard reader.canAdd(video.output) else { throw Failure.readFailed("can't decode the video track") }
         guard writer.canAdd(video.input) else { throw Failure.cannotAdd("the HEVC video track") }
-        reader.add(video.output)
-        writer.add(video.input)
         pairs.append(video)
         inputsByTrackID[videoTrack.trackID] = video.input
         includedTracks.append(videoTrack)
@@ -214,17 +249,13 @@ nonisolated enum VideoTranscoder {
 
             let formats = try await track.load(.formatDescriptions)
             let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
-            output.alwaysCopiesSampleData = false
             let input = AVAssetWriterInput(mediaType: track.mediaType, outputSettings: nil,
                                            sourceFormatHint: formats.first)
-            input.expectsMediaDataInRealTime = false
             try await copyTrackProperties(from: track, to: input)
 
             let what = isAudio ? "an audio track" : "a \(track.mediaType.rawValue) track"
             guard reader.canAdd(output) else { throw Failure.readFailed("can't read \(what)") }
             guard writer.canAdd(input) else { throw Failure.cannotAdd(what) }
-            reader.add(output)
-            writer.add(input)
             pairs.append(Pair(output: output, input: input, isVideo: false))
             inputsByTrackID[track.trackID] = input
             includedTracks.append(track)
@@ -244,23 +275,38 @@ nonisolated enum VideoTranscoder {
             }
         }
 
+        // Adds each output and input to the reader and writer.
+        let flows = pairs.map { pair in
+            TrackFlow(provider: reader.outputProvider(for: pair.output),
+                      receiver: writer.inputReceiver(for: pair.input),
+                      isVideo: pair.isVideo, maxFrameRate: pair.maxFrameRate)
+        }
+
         let duration = try await asset.load(.duration).seconds
 
-        guard reader.startReading() else {
-            throw Failure.readFailed(reader.error?.localizedDescription ?? "unknown error")
+        do {
+            try reader.start()
+        } catch {
+            throw Failure.readFailed(error.localizedDescription)
         }
-        guard writer.startWriting() else {
+        do {
+            try writer.start()
+        } catch {
             reader.cancelReading()
-            throw Failure.writeFailed(writer.error?.localizedDescription ?? "unknown error")
+            throw Failure.writeFailed(error.localizedDescription)
         }
         writer.startSession(atSourceTime: .zero)
 
+        let session = Session(reader: reader, writer: writer)
         do {
-            try await pump(pairs, reader: reader, writer: writer, duration: duration, progress: progress)
+            try await pump(flows, session: session, duration: duration, progress: progress)
         } catch {
-            reader.cancelReading()
-            if writer.status == .writing { writer.cancelWriting() }
-            throw error
+            session.cancel()
+            if error is CancellationError || Task.isCancelled { throw CancellationError() }
+            if reader.status == .failed {
+                throw Failure.readFailed(reader.error?.localizedDescription ?? error.localizedDescription)
+            }
+            throw Failure.writeFailed(writer.error?.localizedDescription ?? error.localizedDescription)
         }
 
         await writer.finishWriting()
@@ -270,70 +316,69 @@ nonisolated enum VideoTranscoder {
         progress(1)
     }
 
-    /// Feeds every track to the writer, round-robin, so the writer can
-    /// interleave them. Checks for cancellation between passes.
+    /// Feeds every track to the writer, one task per track. Each append
+    /// waits until the writer wants more of that track, so the writer
+    /// interleaves the tracks itself.
     private static func pump(
-        _ pairs: [Pair],
-        reader: AVAssetReader,
-        writer: AVAssetWriter,
+        _ flows: [TrackFlow],
+        session: Session,
         duration: Double,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
-        var active = Array(repeating: true, count: pairs.count)
+        try await withTaskCancellationHandler {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                for flow in flows {
+                    group.addTask {
+                        do {
+                            try await copySamples(flow, duration: duration, progress: progress)
+                        } catch {
+                            // Unblocks the other tracks' appends.
+                            session.cancel()
+                            throw error
+                        }
+                    }
+                }
+                try await group.waitForAll()
+            }
+        } onCancel: {
+            session.cancel()
+        }
+    }
+
+    /// Copies one track's samples. Video: reports progress and applies the
+    /// frame-rate cap (keeps the first frame of every 1/rate-second slot,
+    /// like ffmpeg's fps filter; kept frames keep their own timestamps).
+    private static func copySamples(
+        _ flow: TrackFlow,
+        duration: Double,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws {
         var lastReported = -1.0
-        // Frame rate cap: keep the first frame of every 1/rate-second slot,
-        // like ffmpeg's fps filter. Kept frames keep their own timestamps.
         var firstVideoTime: Double?
         var lastSlot = Int.min
 
-        while active.contains(true) {
+        while let sample = try await flow.provider.next() {
             try Task.checkCancellation()
-            var didWork = false
-
-            for (index, pair) in pairs.enumerated() where active[index] {
-                while pair.input.isReadyForMoreMediaData {
-                    guard let sample = pair.output.copyNextSampleBuffer() else {
-                        if reader.status == .failed {
-                            throw Failure.readFailed(reader.error?.localizedDescription ?? "unknown error")
-                        }
-                        pair.input.markAsFinished()
-                        active[index] = false
-                        break
+            if flow.isVideo {
+                let seconds = sample.presentationTimeStamp.seconds
+                if duration > 0 {
+                    let value = min(max(seconds / duration, 0), 1)
+                    if value - lastReported >= 0.002 {
+                        lastReported = value
+                        progress(value)
                     }
-                    if pair.isVideo {
-                        let seconds = CMSampleBufferGetPresentationTimeStamp(sample).seconds
-                        if duration > 0 {
-                            let value = min(max(seconds / duration, 0), 1)
-                            if value - lastReported >= 0.002 {
-                                lastReported = value
-                                progress(value)
-                            }
-                        }
-                        if let rate = pair.maxFrameRate, seconds.isFinite {
-                            let start = firstVideoTime ?? seconds
-                            firstVideoTime = start
-                            let slot = Int(((seconds - start) * rate + 1e-6).rounded(.down))
-                            if slot == lastSlot {
-                                didWork = true
-                                continue  // dropped
-                            }
-                            lastSlot = slot
-                        }
-                    }
-                    guard pair.input.append(sample) else {
-                        throw Failure.writeFailed(writer.error?.localizedDescription ?? "unknown error")
-                    }
-                    didWork = true
+                }
+                if let rate = flow.maxFrameRate, seconds.isFinite {
+                    let start = firstVideoTime ?? seconds
+                    firstVideoTime = start
+                    let slot = Int(((seconds - start) * rate + 1e-6).rounded(.down))
+                    if slot == lastSlot { continue }  // dropped
+                    lastSlot = slot
                 }
             }
-
-            if writer.status == .failed {
-                throw Failure.writeFailed(writer.error?.localizedDescription ?? "unknown error")
-            }
-            if !didWork {
-                try await Task.sleep(for: .milliseconds(5))
-            }
+            try await flow.receiver.append(sample)
         }
+        flow.receiver.finish()
     }
 
     // MARK: - Settings
@@ -379,7 +424,6 @@ nonisolated enum VideoTranscoder {
             let scaledOutput = AVAssetReaderTrackOutput(track: track, outputSettings: pixelSettings)
             if reader.canAdd(scaledOutput) { output = scaledOutput }
         }
-        output.alwaysCopiesSampleData = false
 
         let outputRate: Double? = frameRate > 0
             ? min(Double(frameRate), settings.maxFrameRate ?? .infinity)
@@ -489,7 +533,6 @@ nonisolated enum VideoTranscoder {
         }
 
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
-        input.expectsMediaDataInRealTime = false
         // Rotation flag, like ffmpeg's -noautorotate + copied display matrix.
         // Its offset depends on the frame size, so it is redone when scaling.
         input.transform = isScaled ? fitted(transform, width: width, height: height) : transform

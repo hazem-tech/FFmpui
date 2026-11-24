@@ -1,2 +1,6 @@
 __pycache__/
 *.pyc
+xcuserdata/
+.DS_Store
+build/
+DerivedData/

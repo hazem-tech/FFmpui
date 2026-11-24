@@ -14,6 +14,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 
 build() {
+  local out=$1; shift
   # Same language settings as the Xcode targets (Swift 5 mode, MainActor by
   # default, approachable concurrency, member import visibility).
   xcrun swiftc -O -swift-version 5 -parse-as-library \
@@ -24,11 +25,12 @@ build() {
     -enable-upcoming-feature GlobalActorIsolatedTypesUsability \
     -enable-upcoming-feature DisableOutwardActorInference \
     -enable-upcoming-feature MemberImportVisibility \
-    "$root"/Shared/*.swift "$here"/TranscoderHarness/*.swift -o "$1"
+    "$@" "$root"/Shared/*.swift "$here"/TranscoderHarness/*.swift -o "$out"
 }
 
 if [ "${1:-}" = "--build" ]; then
-  build "${2:?--build needs an output path}"
+  # CI: any compiler warning fails the build.
+  build "${2:?--build needs an output path}" -warnings-as-errors
   exit 0
 fi
 

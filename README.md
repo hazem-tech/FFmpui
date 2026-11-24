@@ -1,8 +1,31 @@
 # shrk
 
+**shrk makes your videos as small as you want them, as HEVC, without losing a single bit of their metadata or audio.**
+
 *Formerly FFmpui.* On the Mac, shrk uses [FFmpeg](https://ffmpeg.org) under the hood; it isn't affiliated with the FFmpeg project.
 
 shrk compresses your videos to HEVC (H.265), as small as you want them. Unlike a plain `ffmpeg` command, it **keeps all of the original metadata**, copied byte for byte, so a compressed clip shows the same recorded date, location and camera details as the original. The audio is never re-encoded: every audio track is copied bit for bit.
+
+## Download
+
+Get the latest Mac app from [**Releases**](https://github.com/hazem-tech/Shrk/releases/latest) (`shrk-…-macOS.dmg` or `.zip`). A new release is built automatically every time `main` changes.
+
+The app is ad-hoc signed, not notarized by Apple, so macOS blocks it the first time:
+
+1. Drag **shrk** into **Applications** and open it once (macOS says it can't be opened).
+2. Go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
+
+Or, in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/shrk.app
+```
+
+Then install FFmpeg (see [Requirements](#requirements)).
+
+## Supported OS
+
+shrk supports only the **latest macOS release** (and the latest iOS for the iPhone app). Each new OS version becomes the new minimum; older versions aren't supported.
 
 ## Features
 
@@ -23,7 +46,7 @@ shrk compresses your videos to HEVC (H.265), as small as you want them. Unlike a
 
 ## Requirements
 
-- macOS with Apple's VideoToolbox HEVC encoder (any recent Mac)
+- The latest macOS release, on a Mac with Apple's VideoToolbox HEVC encoder (any Apple silicon Mac)
 - [Homebrew](https://brew.sh) packages:
 
   ```bash
@@ -55,7 +78,7 @@ How the settings were chosen, and how to re-check them, is in [Tests](#tests).
 
 ## iOS app
 
-The `shrk-iOS` target compresses videos from your **Photos library** on iPhone and iPad (iOS 26 or later), with the **Size + Speed** and **Speed + Quality** modes, the same code as on the Mac ([`Shared/VideoTranscoder.swift`](Shared/VideoTranscoder.swift)), so sizes and quality match.
+The `shrk-iOS` target compresses videos from your **Photos library** on iPhone and iPad (the latest iOS), with the **Size + Speed** and **Speed + Quality** modes, the same code as on the Mac ([`Shared/VideoTranscoder.swift`](Shared/VideoTranscoder.swift)), so sizes and quality match.
 
 - **Add Videos**, pick a **Mode** (and **Quality**) and a **Scale**, then **Start**. Each video is replaced by its compressed version, saved under the same name (unless that version isn't smaller: then the original is kept). When the run ends, iOS asks once to delete the originals (apps can't skip that question); they stay in **Recently Deleted** for 30 days.
 - **Edited videos** (trimmed, filtered, slow-motion ramps…): the edited version, as Photos shows it, is compressed, so the edit is kept (baked in) when the original is replaced.

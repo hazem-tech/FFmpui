@@ -153,20 +153,25 @@ struct TranscoderHarness {
                 }
                 let reader = try AVAssetReader(asset: asset)
                 let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
-                reader.add(output)
-                reader.startReading()
+                let provider = reader.outputProvider(for: output)
+                try reader.start()
                 var buffers = 0, samples = 0
                 var lines: [String] = []
-                while let buffer = output.copyNextSampleBuffer() {
+                while let ready = try await provider.next() {
                     buffers += 1
-                    let count = CMSampleBufferGetNumSamples(buffer)
+                    let (count, pts, dur, start, end) = ready.withUnsafeSampleBuffer { buffer in
+                        (CMSampleBufferGetNumSamples(buffer),
+                         CMSampleBufferGetPresentationTimeStamp(buffer).seconds,
+                         CMSampleBufferGetDuration(buffer).seconds,
+                         CMGetAttachment(buffer, key: kCMSampleBufferAttachmentKey_TrimDurationAtStart, attachmentModeOut: nil)
+                             .map { String(describing: $0) },
+                         CMGetAttachment(buffer, key: kCMSampleBufferAttachmentKey_TrimDurationAtEnd, attachmentModeOut: nil)
+                             .map { String(describing: $0) })
+                    }
                     samples += count
-                    let start = CMGetAttachment(buffer, key: kCMSampleBufferAttachmentKey_TrimDurationAtStart, attachmentModeOut: nil)
-                    let end = CMGetAttachment(buffer, key: kCMSampleBufferAttachmentKey_TrimDurationAtEnd, attachmentModeOut: nil)
-                    let line = "  buffer \(buffers): pts \(CMSampleBufferGetPresentationTimeStamp(buffer).seconds) "
-                        + "dur \(CMSampleBufferGetDuration(buffer).seconds) packets \(count)"
-                        + (start != nil ? " trimStart=\(String(describing: start!))" : "")
-                        + (end != nil ? " trimEnd=\(String(describing: end!))" : "")
+                    let line = "  buffer \(buffers): pts \(pts) dur \(dur) packets \(count)"
+                        + (start.map { " trimStart=\($0)" } ?? "")
+                        + (end.map { " trimEnd=\($0)" } ?? "")
                     if buffers <= 3 || start != nil || end != nil { print(line) }
                     lines.append(line)
                 }
