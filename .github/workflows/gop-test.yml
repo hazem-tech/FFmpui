@@ -27,44 +27,33 @@ jobs:
       - name: Install ffmpeg
         run: brew install ffmpeg
 
-      - name: Test
+      - name: Test (x265 Size mode, single keyframe vs every 10 s)
         run: |
           set -u
           out="$RUNNER_TEMP/out"; mkdir -p "$out"
           summary() { tee -a "$GITHUB_STEP_SUMMARY"; }
-          keyframes() {
-            ffprobe -v error -select_streams v:0 -skip_frame nokey -show_entries frame=pts_time -of csv=p=0 "$1" | wc -l | tr -d ' '
-          }
           pct() { awk -v a="$1" -v b="$2" 'BEGIN{ printf "%+.1f%%", (a-b)*100/b }'; }
-          # The fixtures are 5 s and 12 s: loop each to about 60 s.
+          # Size mode's settings from shrk/compress_video.sh, without keyint.
+          P="qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1"
+          {
+            echo "### x265 Size mode: keyint=-1 (single) vs a keyframe every 10 s (240 at 24 fps)"
+            echo
+            echo "| clip | scale | audio KB | single: total KB | 10 s: total KB | total | single: video KB | 10 s: video KB | video |"
+            echo "|---|---|---|---|---|---|---|---|---|"
+          } | summary
           for spec in "IMG_6758.mov|11" "samsung.mp4|4"; do
             IFS='|' read -r name loops <<< "$spec"
             f="$out/long_$name"
             ffmpeg -v error -y -stream_loop "$loops" -i "Tests/Fixtures/$name" -c copy "$f"
             ffmpeg -v error -y -i "$f" -vn -c:a copy "$out/audio.m4a"
             audio=$(stat -f %z "$out/audio.m4a")
-            dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$f")
-            for mode in "mode3|scale=-2:240|12" "mode1|scale=trunc(iw/3/2)*2:-2|24"; do
-              IFS='|' read -r m vf fps <<< "$mode"
-              {
-                echo "### $name looped to ${dur%.*} s · $m ($vf, $fps fps) · audio $((audio/1024)) KB"
-                echo
-                echo "| -g | keyframes | total KB | video KB | total vs g=600 | video vs g=600 |"
-                echo "|---|---|---|---|---|---|"
-              } | summary
-              base_t=0; base_v=0
-              for g in 600 default 12 24 48 120 240; do
-                gopt=""; [ "$g" = default ] || gopt="-g $g"
-                o="$out/${m}_g${g}.mp4"
-                if ! ffmpeg -v error -y -i "$f" -vf "$vf" -r "$fps" -c:a copy \
-                     -c:v hevc_videotoolbox -tag:v hvc1 -q:v 1 $gopt "$o" 2> "$out/err.txt"; then
-                  echo "| $g | failed: $(head -c 200 "$out/err.txt" | tr '\n|' '  ') | | | | |" | summary
-                  continue
-                fi
-                t=$(stat -f %z "$o"); v=$((t - audio)); k=$(keyframes "$o")
-                if [ "$base_t" = 0 ]; then base_t=$t; base_v=$v; fi
-                echo "| $g | $k | $((t/1024)) | $((v/1024)) | $(pct $t $base_t) | $(pct $v $base_v) |" | summary
+            for sc in 1 2 4; do
+              vf="fps=24"; [ "$sc" = 1 ] || vf="fps=24,scale=trunc(iw/$sc/2)*2:trunc(ih/$sc/2)*2"
+              for k in -1 240; do
+                ffmpeg -v error -y -i "$f" -vf "$vf" -c:a copy -c:v libx265 -tag:v hvc1 -preset veryfast -crf 51 \
+                  -x265-params "log-level=error:keyint=$k:$P" "$out/k$k.mp4"
               done
-              echo | summary
+              a=$(stat -f %z "$out/k-1.mp4"); b=$(stat -f %z "$out/k240.mp4")
+              echo "| $name | 1/$sc | $((audio/1024)) | $((a/1024)) | $((b/1024)) | $(pct $b $a) | $(((a-audio)/1024)) | $(((b-audio)/1024)) | $(pct $((b-audio)) $((a-audio))) |" | summary
             done
           done
