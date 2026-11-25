@@ -149,18 +149,19 @@ run_ffmpeg() {
 # Encoding settings per mode. Audio is never re-encoded in any mode.
 
 FPS_CAP=24                  # size: frame rate limit (lower rates are kept)
-QUALITY_KEYFRAME_SECONDS=10
+KEYFRAME_SECONDS=10         # every mode: a keyframe every 10 s, so seeking stays quick
 X265_QUIET="log-level=error"
 # size: the smallest file x265 can make. Found by searching x265's options on
 # real iPhone footage (Tests/tune.sh, Tests/tune/size.txt): no SAO, 4×4
-# transforms only, wide motion search, chroma at the highest quantizer and a
-# single keyframe. This gives under a third of the bytes of plain "-crf 51"
+# transforms only, wide motion search and chroma at the highest quantizer.
+# (A single keyframe was only 0-0.8% smaller than one every 10 s: not worth
+# slower seeking.) This gives under a third of the bytes of plain "-crf 51"
 # at every scale (slower presets give *bigger* files at this quantizer), and
 # it is quick. (min-cu-size=32 was dropped: with x265 4.3 it tripled the
 # size at 640×360.)
 SIZE_PRESET="${SHRK_SIZE_PRESET:-veryfast}"
 SIZE_CRF="${SHRK_SIZE_CRF:-51}"
-SIZE_X265="${SHRK_SIZE_X265:-keyint=-1:qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1}"
+SIZE_X265="${SHRK_SIZE_X265:-qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1}"
 # quality: 10-bit x265 at the slower preset; the CRF is picked per video
 # (below). Chosen with Tests/tune.sh (bytes needed for VMAF 95 on the test
 # clips): aq-mode 4 + no SAO + psy-rd 1.0 needs 16% fewer bytes than the
@@ -236,14 +237,14 @@ plan_video() {
   fi
 
   local gop
-  gop=$(awk -v f="$OUT_FPS" -v s="$QUALITY_KEYFRAME_SECONDS" 'BEGIN { g = int(f * s + 0.5); if (g < 1) g = 1; print g }')
+  gop=$(awk -v f="$OUT_FPS" -v s="$KEYFRAME_SECONDS" 'BEGIN { g = int(f * s + 0.5); if (g < 1) g = 1; print g }')
 
   case "$MODE" in
     size)
       local pix=yuv420p
       is_ten_bit "$V_PIXFMT" && pix=yuv420p10le   # keeps HDR (HLG/PQ) intact
       VIDEO_ARGS=(-c:v:0 libx265 -tag:v:0 hvc1 -pix_fmt:v:0 "$pix" -preset "$SIZE_PRESET"
-                  -crf "$SIZE_CRF" -x265-params "$X265_QUIET:$SIZE_X265")
+                  -crf "$SIZE_CRF" -x265-params "$X265_QUIET:keyint=$gop:$SIZE_X265")
       ;;
     quality)
       VIDEO_ARGS=(-c:v:0 libx265 -tag:v:0 hvc1 -pix_fmt:v:0 yuv420p10le -preset "$QUALITY_PRESET"
