@@ -35,21 +35,25 @@ jobs:
           keyframes() {
             ffprobe -v error -select_streams v:0 -skip_frame nokey -show_entries frame=pts_time -of csv=p=0 "$1" | wc -l | tr -d ' '
           }
-          for f in Tests/Fixtures/IMG_6758.mov Tests/Fixtures/samsung.mp4; do
-            name=$(basename "$f")
+          pct() { awk -v a="$1" -v b="$2" 'BEGIN{ printf "%+.1f%%", (a-b)*100/b }'; }
+          # The fixtures are 5 s and 12 s: loop each to about 60 s.
+          for spec in "IMG_6758.mov|11" "samsung.mp4|4"; do
+            IFS='|' read -r name loops <<< "$spec"
+            f="$out/long_$name"
+            ffmpeg -v error -y -stream_loop "$loops" -i "Tests/Fixtures/$name" -c copy "$f"
             ffmpeg -v error -y -i "$f" -vn -c:a copy "$out/audio.m4a"
             audio=$(stat -f %z "$out/audio.m4a")
             dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$f")
             for mode in "mode3|scale=-2:240|12" "mode1|scale=trunc(iw/3/2)*2:-2|24"; do
               IFS='|' read -r m vf fps <<< "$mode"
               {
-                echo "### $name · $m ($vf, $fps fps) · ${dur%.*} s · audio $((audio/1024)) KB"
+                echo "### $name looped to ${dur%.*} s · $m ($vf, $fps fps) · audio $((audio/1024)) KB"
                 echo
                 echo "| -g | keyframes | total KB | video KB | total vs g=600 | video vs g=600 |"
                 echo "|---|---|---|---|---|---|"
               } | summary
-              declare -A tot vid kf
-              for g in default 12 24 48 120 240 600; do
+              base_t=0; base_v=0
+              for g in 600 default 12 24 48 120 240; do
                 gopt=(); [ "$g" = default ] || gopt=(-g "$g")
                 o="$out/${m}_g${g}.mp4"
                 if ! ffmpeg -v error -y -i "$f" -vf "$vf" -r "$fps" -c:a copy \
@@ -57,17 +61,10 @@ jobs:
                   echo "| $g | failed: $(head -c 200 "$out/err.txt" | tr '\n|' '  ') | | | | |" | summary
                   continue
                 fi
-                s=$(stat -f %z "$o")
-                tot[$g]=$s; vid[$g]=$((s - audio)); kf[$g]=$(keyframes "$o")
-              done
-              base_t=${tot[600]:-0}; base_v=${vid[600]:-0}
-              for g in default 12 24 48 120 240 600; do
-                [ -n "${tot[$g]:-}" ] || continue
-                pt=$(awk -v a="${tot[$g]}" -v b="$base_t" 'BEGIN{ if (b>0) printf "%+.1f%%", (a-b)*100/b; else print "-" }')
-                pv=$(awk -v a="${vid[$g]}" -v b="$base_v" 'BEGIN{ if (b>0) printf "%+.1f%%", (a-b)*100/b; else print "-" }')
-                echo "| $g | ${kf[$g]} | $((tot[$g]/1024)) | $((vid[$g]/1024)) | $pt | $pv |" | summary
+                t=$(stat -f %z "$o"); v=$((t - audio)); k=$(keyframes "$o")
+                if [ "$base_t" = 0 ]; then base_t=$t; base_v=$v; fi
+                echo "| $g | $k | $((t/1024)) | $((v/1024)) | $(pct $t $base_t) | $(pct $v $base_v) |" | summary
               done
               echo | summary
-              unset tot vid kf
             done
           done
