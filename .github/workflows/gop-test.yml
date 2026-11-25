@@ -54,10 +54,10 @@ jobs:
               } | summary
               base_t=0; base_v=0
               for g in 600 default 12 24 48 120 240; do
-                gopt=(); [ "$g" = default ] || gopt=(-g "$g")
+                gopt=""; [ "$g" = default ] || gopt="-g $g"
                 o="$out/${m}_g${g}.mp4"
                 if ! ffmpeg -v error -y -i "$f" -vf "$vf" -r "$fps" -c:a copy \
-                     -c:v hevc_videotoolbox -tag:v hvc1 -q:v 1 "${gopt[@]}" "$o" 2> "$out/err.txt"; then
+                     -c:v hevc_videotoolbox -tag:v hvc1 -q:v 1 $gopt "$o" 2> "$out/err.txt"; then
                   echo "| $g | failed: $(head -c 200 "$out/err.txt" | tr '\n|' '  ') | | | | |" | summary
                   continue
                 fi
