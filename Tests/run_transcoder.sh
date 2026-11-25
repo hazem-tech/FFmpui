@@ -66,7 +66,7 @@ run "  without power saving" --no-power-saving
 run "  without speed over quality" --no-prioritize-speed
 run "  keyframe every 2 s" --keyframes 2
 run "  keyframe every 60 s" --keyframes 60
-run "  keyframe every 10 s (before)" --keyframes 10
+run "  single keyframe (before)" --keyframes single
 run "  keyframes: encoder's choice" --keyframes auto
 run "  no 24 fps cap" --no-fps-cap
 run "  scale 0.5" --scale 0.5
