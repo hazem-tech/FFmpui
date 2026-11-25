@@ -1,0 +1,73 @@
+name: Keyframe interval test
+
+# Temporary experiment: how much does the keyframe interval (-g) change the
+# file size with Apple's hardware HEVC encoder (hevc_videotoolbox, -q:v 1)?
+# Uses the real phone clips from the shrk branch's Tests/Fixtures.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/gop-test.yml
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  gop:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: claude/fervent-darwin-6ea2wn
+          sparse-checkout: Tests/Fixtures
+
+      - name: Install ffmpeg
+        run: brew install ffmpeg
+
+      - name: Test
+        run: |
+          set -u
+          out="$RUNNER_TEMP/out"; mkdir -p "$out"
+          summary() { tee -a "$GITHUB_STEP_SUMMARY"; }
+          keyframes() {
+            ffprobe -v error -select_streams v:0 -skip_frame nokey -show_entries frame=pts_time -of csv=p=0 "$1" | wc -l | tr -d ' '
+          }
+          for f in Tests/Fixtures/IMG_6758.mov Tests/Fixtures/samsung.mp4; do
+            name=$(basename "$f")
+            ffmpeg -v error -y -i "$f" -vn -c:a copy "$out/audio.m4a"
+            audio=$(stat -f %z "$out/audio.m4a")
+            dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$f")
+            for mode in "mode3|scale=-2:240|12" "mode1|scale=trunc(iw/3/2)*2:-2|24"; do
+              IFS='|' read -r m vf fps <<< "$mode"
+              {
+                echo "### $name · $m ($vf, $fps fps) · ${dur%.*} s · audio $((audio/1024)) KB"
+                echo
+                echo "| -g | keyframes | total KB | video KB | total vs g=600 | video vs g=600 |"
+                echo "|---|---|---|---|---|---|"
+              } | summary
+              declare -A tot vid kf
+              for g in default 12 24 48 120 240 600; do
+                gopt=(); [ "$g" = default ] || gopt=(-g "$g")
+                o="$out/${m}_g${g}.mp4"
+                if ! ffmpeg -v error -y -i "$f" -vf "$vf" -r "$fps" -c:a copy \
+                     -c:v hevc_videotoolbox -tag:v hvc1 -q:v 1 "${gopt[@]}" "$o" 2> "$out/err.txt"; then
+                  echo "| $g | failed: $(head -c 200 "$out/err.txt" | tr '\n|' '  ') | | | | |" | summary
+                  continue
+                fi
+                s=$(stat -f %z "$o")
+                tot[$g]=$s; vid[$g]=$((s - audio)); kf[$g]=$(keyframes "$o")
+              done
+              base_t=${tot[600]:-0}; base_v=${vid[600]:-0}
+              for g in default 12 24 48 120 240 600; do
+                [ -n "${tot[$g]:-}" ] || continue
+                pt=$(awk -v a="${tot[$g]}" -v b="$base_t" 'BEGIN{ if (b>0) printf "%+.1f%%", (a-b)*100/b; else print "-" }')
+                pv=$(awk -v a="${vid[$g]}" -v b="$base_v" 'BEGIN{ if (b>0) printf "%+.1f%%", (a-b)*100/b; else print "-" }')
+                echo "| $g | ${kf[$g]} | $((tot[$g]/1024)) | $((vid[$g]/1024)) | $pt | $pv |" | summary
+              done
+              echo | summary
+              unset tot vid kf
+            done
+          done
