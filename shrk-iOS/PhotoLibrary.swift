@@ -37,7 +37,7 @@ nonisolated enum PhotoLibrary {
         let rendered: PHAssetResource?
         /// Size of the original file, if Photos tells us.
         let fileSize: Int64?
-        var filename: String { resource.originalFilename }
+        var filename: String { resource.filename ?? "video_placeholder_name.mov" }
     }
 
     static var authorization: PHAuthorizationStatus {
@@ -69,7 +69,7 @@ nonisolated enum PhotoLibrary {
 
     static func filename(id: String) -> String? {
         guard let asset = asset(id: id) else { return nil }
-        return PHAssetResource.assetResources(for: asset).first { $0.type == .video }?.originalFilename
+        return PHAssetResource.assetResources(for: asset).first { $0.type == .video }?.filename
     }
 
     // MARK: - Export

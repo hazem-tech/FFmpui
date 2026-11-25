@@ -46,7 +46,7 @@ final class BackgroundRun {
             subtitle: "Starting…"
         )
         request.strategy = .queue
-        try? BGTaskScheduler.shared.submit(request)
+        BGTaskScheduler.shared.submitTaskRequest(request) { _ in }
     }
 
     /// `done` counts finished videos plus the fraction of the current one.
