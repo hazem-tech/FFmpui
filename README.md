@@ -1,10 +1,6 @@
-# shrk
+# Shrk
 
-**shrk makes your videos as small as you want them, as HEVC, without losing a single bit of their metadata or audio.**
-
-*Formerly FFmpui.* On the Mac, shrk uses [FFmpeg](https://ffmpeg.org) under the hood; it isn't affiliated with the FFmpeg project.
-
-shrk compresses your videos to HEVC (H.265), as small as you want them. Unlike a plain `ffmpeg` command, it **keeps all of the original metadata**, copied byte for byte, so a compressed clip shows the same recorded date, location and camera details as the original. The audio is never re-encoded: every audio track is copied bit for bit.
+Shrk compresses your videos to HEVC (H.265), as small as you want them. Unlike a plain `ffmpeg` command, it **keeps all of the original metadata**, copied byte for byte, so a compressed clip shows the same recorded date, location and camera details as the original. The audio is never re-encoded: every audio track is copied bit for bit.
 
 ## Download
 
@@ -114,3 +110,4 @@ To benchmark Size + Speed on your own Mac (any clip; needs Xcode):
 ```bash
 Tests/run_transcoder.sh ~/Movies/clip.mov
 ```
+On the Mac, Shrk uses [FFmpeg](https://ffmpeg.org) under the hood; it isn't affiliated with the FFmpeg project.
