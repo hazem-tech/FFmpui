@@ -1,19 +1,20 @@
 //
 //  VideoTranscoder.swift
-//  FFmpui
+//  shrk
 //
 //  Re-encodes a video to HEVC with AVFoundation (Apple's VideoToolbox
-//  hardware encoder, the same one ffmpeg's hevc_videotoolbox uses).
-//  It mirrors the ffmpeg step of compress_video.sh:
+//  hardware encoder): the "Size + Speed" mode of both apps (the smallest file
+//  the hardware encoder makes, quickly and without much heat) and "Speed +
+//  Quality" (fast, and looks like the original).
 //
-//    • first video track → HEVC, rotation flag kept (pixels not rotated)
+//    • first video track → HEVC at the lowest bitrate, optionally scaled,
+//      frame rate capped at 24 fps, rotation flag kept (pixels not rotated)
 //    • every audio track copied untouched
 //    • timecode / metadata / telemetry / subtitle tracks copied when the
 //      container accepts them, otherwise a second try with video + audio only
 //
-//  The original's metadata is copied afterwards: on the Mac by the script's
-//  ExifTool step (`compress_video.sh --encoded`), exactly as for the ffmpeg
-//  encoder; on iOS by MetadataCopier. Shared by both apps.
+//  The original's metadata is copied afterwards by MetadataCopier, on both
+//  apps. Shared by both apps.
 //
 
 import AVFoundation
@@ -39,9 +40,72 @@ nonisolated enum VideoTranscoder {
         }
     }
 
-    /// Same as the script's default `--bitrate 1`: ask VideoToolbox for the
-    /// lowest bitrate and let it pick its own floor. Used by both apps.
-    static let defaultBitrate = 1
+    struct Settings: Sendable {
+        enum KeyFrames: Sendable, Equatable {
+            /// At most this many seconds apart.
+            case every(Double)
+            /// Only the first frame is a keyframe (the encoder may still add
+            /// one where that makes the file smaller, e.g. at a scene cut).
+            case single
+            /// No limit set: the encoder decides where to put them.
+            case encoderChoice
+        }
+
+        /// Width and height factor (1, 0.5, 0.25), rounded down to even sizes.
+        var scale: Double = 1
+        /// Frames above this rate are dropped; nil keeps every frame.
+        var maxFrameRate: Double? = 24
+        /// 1 asks VideoToolbox for the lowest bitrate it can do.
+        var bitrate: Int? = 1
+        /// Constant-quality target (0…1): 0 shaves off another ~1%. Never used
+        /// alone: an encoder that ignored it would fall back to a high default
+        /// bitrate, so the lowest bitrate and the quantizer floor stay too.
+        var quality: Double? = 0
+        /// A keyframe every 10 s, so jumping around in a long video stays
+        /// quick. A single keyframe was only 0.1–0.3% smaller on a 63 s clip,
+        /// at the same speed: not worth slower seeking.
+        var keyFrames: KeyFrames = .every(10)
+        /// Ask the encoder to use as little power as it can (less heat).
+        var powerEfficient = true
+        /// Ask the encoder to favor speed over quality: less work per frame.
+        /// Size + Speed is about speed; the smallest file is Size mode's job.
+        var prioritizeSpeed = true
+        /// Lowest quantizer the encoder may use (51 = HEVC's coarsest). The
+        /// lowest bitrate alone leaves the hardware encoder well above it:
+        /// this makes the video about 4× smaller (Tests/run_transcoder.sh).
+        var minFrameQP: Int? = 51
+        /// Let the encoder vary the quantizer within a frame (detail vs. flat
+        /// areas). Off saves another ~10% when quality doesn't matter.
+        /// (Mac only; iOS has no such setting.)
+        var adaptiveQP = false
+        /// With `quality` but no `bitrate`: bits per pixel per frame to aim
+        /// for if the encoder has no constant-quality mode (Intel Macs).
+        var fallbackBitsPerPixel = 0.08
+
+        /// Both apps' "Size + Speed" mode.
+        static func sizeAndSpeed(scale: Double) -> Settings {
+            Settings(scale: scale)
+        }
+
+        /// Both apps' "Speed + Quality" mode: the hardware encoder at a
+        /// constant quality, every frame kept, a keyframe every 10 s.
+        static func speedAndQuality(scale: Double, level: QualityLevel) -> Settings {
+            speedAndQuality(scale: scale, quality: level.encoderQuality,
+                            fallbackBitsPerPixel: level.fallbackBitsPerPixel)
+        }
+
+        static func speedAndQuality(scale: Double, quality: Double, fallbackBitsPerPixel: Double = 0.08) -> Settings {
+            var settings = Settings(scale: scale)
+            settings.maxFrameRate = nil
+            settings.bitrate = nil
+            settings.quality = quality
+            settings.keyFrames = .every(10)
+            settings.minFrameQP = nil
+            settings.adaptiveQP = true
+            settings.fallbackBitsPerPixel = fallbackBitsPerPixel
+            return settings
+        }
+    }
 
     /// Container of the output, chosen by the file extension (like ffmpeg).
     static func fileType(for url: URL) -> AVFileType {
@@ -58,7 +122,7 @@ nonisolated enum VideoTranscoder {
     static func transcode(
         source: URL,
         destination: URL,
-        bitrate: Int,
+        settings: Settings,
         log: @escaping @Sendable (String) -> Void,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
@@ -71,7 +135,7 @@ nonisolated enum VideoTranscoder {
 
         do {
             try await encode(asset: asset, tracks: tracks, videoTrack: videoTrack, destination: destination,
-                             bitrate: bitrate, includeOtherTracks: hasOtherTracks, progress: progress)
+                             settings: settings, includeOtherTracks: hasOtherTracks, log: log, progress: progress)
         } catch {
             try? FileManager.default.removeItem(at: destination)
             guard hasOtherTracks, !(error is CancellationError), !Task.isCancelled else { throw error }
@@ -82,7 +146,7 @@ nonisolated enum VideoTranscoder {
             progress(0)
             do {
                 try await encode(asset: asset, tracks: tracks, videoTrack: videoTrack, destination: destination,
-                                 bitrate: bitrate, includeOtherTracks: false, progress: progress)
+                                 settings: settings, includeOtherTracks: false, log: { _ in }, progress: progress)
             } catch {
                 try? FileManager.default.removeItem(at: destination)
                 throw error
@@ -102,10 +166,34 @@ nonisolated enum VideoTranscoder {
 
     // MARK: - One attempt
 
+    /// The decoder output and encoder input of one track, before reading starts.
     private struct Pair {
         let output: AVAssetReaderTrackOutput
         let input: AVAssetWriterInput
         let isVideo: Bool
+        /// Video only: keep at most this many frames per second.
+        var maxFrameRate: Double?
+    }
+
+    /// One track's sample flow, from the reader's provider to the writer's
+    /// receiver, with the sample read but not yet accepted by the writer.
+    /// Only the one pump loop of an encode uses it.
+    private final class TrackFlow: @unchecked Sendable {
+        let provider: AVAssetReaderOutput.Provider<CMReadySampleBuffer<CMSampleBuffer.DynamicContent>>
+        let receiver: AVAssetWriterInput.SampleBufferReceiver
+        let isVideo: Bool
+        let maxFrameRate: Double?
+        var pending: CMReadySampleBuffer<CMSampleBuffer.DynamicContent>?
+        var isFinished = false
+
+        init(provider: sending AVAssetReaderOutput.Provider<CMReadySampleBuffer<CMSampleBuffer.DynamicContent>>,
+             receiver: sending AVAssetWriterInput.SampleBufferReceiver,
+             isVideo: Bool, maxFrameRate: Double?) {
+            self.provider = provider
+            self.receiver = receiver
+            self.isVideo = isVideo
+            self.maxFrameRate = maxFrameRate
+        }
     }
 
     private static func encode(
@@ -113,8 +201,9 @@ nonisolated enum VideoTranscoder {
         tracks: [AVAssetTrack],
         videoTrack: AVAssetTrack,
         destination: URL,
-        bitrate: Int,
+        settings: Settings,
         includeOtherTracks: Bool,
+        log: @escaping @Sendable (String) -> Void,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
         try? FileManager.default.removeItem(at: destination)
@@ -129,11 +218,10 @@ nonisolated enum VideoTranscoder {
         var includedTracks: [AVAssetTrack] = []
 
         // Video → HEVC
-        let video = try await videoPair(for: videoTrack, writer: writer, bitrate: bitrate)
+        let (video, summary) = try await videoPair(for: videoTrack, reader: reader, writer: writer, settings: settings)
+        log(summary)
         guard reader.canAdd(video.output) else { throw Failure.readFailed("can't decode the video track") }
         guard writer.canAdd(video.input) else { throw Failure.cannotAdd("the HEVC video track") }
-        reader.add(video.output)
-        writer.add(video.input)
         pairs.append(video)
         inputsByTrackID[videoTrack.trackID] = video.input
         includedTracks.append(videoTrack)
@@ -145,17 +233,13 @@ nonisolated enum VideoTranscoder {
 
             let formats = try await track.load(.formatDescriptions)
             let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
-            output.alwaysCopiesSampleData = false
             let input = AVAssetWriterInput(mediaType: track.mediaType, outputSettings: nil,
                                            sourceFormatHint: formats.first)
-            input.expectsMediaDataInRealTime = false
             try await copyTrackProperties(from: track, to: input)
 
             let what = isAudio ? "an audio track" : "a \(track.mediaType.rawValue) track"
             guard reader.canAdd(output) else { throw Failure.readFailed("can't read \(what)") }
             guard writer.canAdd(input) else { throw Failure.cannotAdd(what) }
-            reader.add(output)
-            writer.add(input)
             pairs.append(Pair(output: output, input: input, isVideo: false))
             inputsByTrackID[track.trackID] = input
             includedTracks.append(track)
@@ -175,23 +259,38 @@ nonisolated enum VideoTranscoder {
             }
         }
 
+        // Adds each output and input to the reader and writer.
+        let flows = pairs.map { pair in
+            TrackFlow(provider: reader.outputProvider(for: pair.output),
+                      receiver: writer.inputReceiver(for: pair.input),
+                      isVideo: pair.isVideo, maxFrameRate: pair.maxFrameRate)
+        }
+
         let duration = try await asset.load(.duration).seconds
 
-        guard reader.startReading() else {
-            throw Failure.readFailed(reader.error?.localizedDescription ?? "unknown error")
+        do {
+            try reader.start()
+        } catch {
+            throw Failure.readFailed(error.localizedDescription)
         }
-        guard writer.startWriting() else {
+        do {
+            try writer.start()
+        } catch {
             reader.cancelReading()
-            throw Failure.writeFailed(writer.error?.localizedDescription ?? "unknown error")
+            throw Failure.writeFailed(error.localizedDescription)
         }
         writer.startSession(atSourceTime: .zero)
 
         do {
-            try await pump(pairs, reader: reader, writer: writer, duration: duration, progress: progress)
+            try await pump(flows, duration: duration, progress: progress)
         } catch {
             reader.cancelReading()
             if writer.status == .writing { writer.cancelWriting() }
-            throw error
+            if error is CancellationError || Task.isCancelled { throw CancellationError() }
+            if reader.status == .failed {
+                throw Failure.readFailed(reader.error?.localizedDescription ?? error.localizedDescription)
+            }
+            throw Failure.writeFailed(writer.error?.localizedDescription ?? error.localizedDescription)
         }
 
         await writer.finishWriting()
@@ -202,49 +301,60 @@ nonisolated enum VideoTranscoder {
     }
 
     /// Feeds every track to the writer, round-robin, so the writer can
-    /// interleave them. Checks for cancellation between passes.
+    /// interleave them: each track gets samples until its input isn't ready
+    /// (appendImmediately says no), then it's the next track's turn. Checks
+    /// for cancellation between passes.
     private static func pump(
-        _ pairs: [Pair],
-        reader: AVAssetReader,
-        writer: AVAssetWriter,
+        _ flows: [TrackFlow],
         duration: Double,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
-        var active = Array(repeating: true, count: pairs.count)
         var lastReported = -1.0
+        // Frame rate cap: keep the first frame of every 1/rate-second slot,
+        // like ffmpeg's fps filter. Kept frames keep their own timestamps.
+        var firstVideoTime: Double?
+        var lastSlot = Int.min
 
-        while active.contains(true) {
+        while flows.contains(where: { !$0.isFinished }) {
             try Task.checkCancellation()
             var didWork = false
 
-            for (index, pair) in pairs.enumerated() where active[index] {
-                while pair.input.isReadyForMoreMediaData {
-                    guard let sample = pair.output.copyNextSampleBuffer() else {
-                        if reader.status == .failed {
-                            throw Failure.readFailed(reader.error?.localizedDescription ?? "unknown error")
+            for flow in flows where !flow.isFinished {
+                while true {
+                    if flow.pending == nil {
+                        guard let sample = try await flow.provider.next() else {
+                            flow.receiver.finish()
+                            flow.isFinished = true
+                            break
                         }
-                        pair.input.markAsFinished()
-                        active[index] = false
-                        break
-                    }
-                    if pair.isVideo, duration > 0 {
-                        let seconds = CMSampleBufferGetPresentationTimeStamp(sample).seconds
-                        let value = min(max(seconds / duration, 0), 1)
-                        if value - lastReported >= 0.002 {
-                            lastReported = value
-                            progress(value)
+                        if flow.isVideo {
+                            let seconds = sample.presentationTimeStamp.seconds
+                            if duration > 0 {
+                                let value = min(max(seconds / duration, 0), 1)
+                                if value - lastReported >= 0.002 {
+                                    lastReported = value
+                                    progress(value)
+                                }
+                            }
+                            if let rate = flow.maxFrameRate, seconds.isFinite {
+                                let start = firstVideoTime ?? seconds
+                                firstVideoTime = start
+                                let slot = Int(((seconds - start) * rate + 1e-6).rounded(.down))
+                                if slot == lastSlot {
+                                    didWork = true
+                                    continue  // dropped
+                                }
+                                lastSlot = slot
+                            }
                         }
+                        flow.pending = sample
                     }
-                    guard pair.input.append(sample) else {
-                        throw Failure.writeFailed(writer.error?.localizedDescription ?? "unknown error")
-                    }
+                    guard let sample = flow.pending, try flow.receiver.appendImmediately(sample) else { break }
+                    flow.pending = nil
                     didWork = true
                 }
             }
 
-            if writer.status == .failed {
-                throw Failure.writeFailed(writer.error?.localizedDescription ?? "unknown error")
-            }
             if !didWork {
                 try await Task.sleep(for: .milliseconds(5))
             }
@@ -253,7 +363,14 @@ nonisolated enum VideoTranscoder {
 
     // MARK: - Settings
 
-    private static func videoPair(for track: AVAssetTrack, writer: AVAssetWriter, bitrate: Int) async throws -> Pair {
+    /// Builds the decoder output and HEVC encoder input for the video track.
+    /// Returns them with a one-line summary of the encoder settings for the log.
+    private static func videoPair(
+        for track: AVAssetTrack,
+        reader: AVAssetReader,
+        writer: AVAssetWriter,
+        settings: Settings
+    ) async throws -> (Pair, String) {
         let (formats, naturalSize, transform, timeScale, frameRate) = try await track.load(
             .formatDescriptions, .naturalSize, .preferredTransform, .naturalTimeScale, .nominalFrameRate)
         let extensions = formats.first.flatMap { CMFormatDescriptionGetExtensions($0) as? [String: Any] } ?? [:]
@@ -265,53 +382,177 @@ nonisolated enum VideoTranscoder {
                             kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ as String]
         let tenBit = bits > 8 || hdrTransfers.contains(transfer ?? "")
 
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+        // Output size: scaled, rounded down to even numbers (4:2:0 video).
+        let sourceWidth = Int(naturalSize.width.rounded())
+        let sourceHeight = Int(naturalSize.height.rounded())
+        let isScaled = settings.scale < 1
+        let width = isScaled ? evenSize(Double(sourceWidth) * settings.scale) : sourceWidth
+        let height = isScaled ? evenSize(Double(sourceHeight) * settings.scale) : sourceHeight
+
+        // Ask the decoder for frames at the output size (less memory traffic);
+        // the encoder scales them itself if the decoder can't.
+        var pixelSettings: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: tenBit
                 ? kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
                 : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
             kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any](),
-        ])
-        output.alwaysCopiesSampleData = false
+        ]
+        var output = AVAssetReaderTrackOutput(track: track, outputSettings: pixelSettings)
+        if isScaled {
+            pixelSettings[kCVPixelBufferWidthKey as String] = width
+            pixelSettings[kCVPixelBufferHeightKey as String] = height
+            let scaledOutput = AVAssetReaderTrackOutput(track: track, outputSettings: pixelSettings)
+            if reader.canAdd(scaledOutput) { output = scaledOutput }
+        }
 
+        let outputRate: Double? = frameRate > 0
+            ? min(Double(frameRate), settings.maxFrameRate ?? .infinity)
+            : nil
         var compression: [String: Any] = [
-            AVVideoAverageBitRateKey: bitrate,
             AVVideoProfileLevelKey: tenBit
                 ? kVTProfileLevel_HEVC_Main10_AutoLevel as String
                 : kVTProfileLevel_HEVC_Main_AutoLevel as String,
+            AVVideoAllowFrameReorderingKey: true,
         ]
-        if frameRate > 0 {
-            compression[AVVideoExpectedSourceFrameRateKey] = frameRate
+        if let bitrate = settings.bitrate {
+            compression[AVVideoAverageBitRateKey] = bitrate
+        }
+        if let outputRate {
+            compression[AVVideoExpectedSourceFrameRateKey] = outputRate
+        }
+        // "Single" is a 24-hour interval: no video is that long.
+        let keyFrameSeconds: Double? = switch settings.keyFrames {
+        case .every(let seconds): seconds
+        case .single: 86_400
+        case .encoderChoice: nil
+        }
+        if let keyFrameSeconds {
+            compression[AVVideoMaxKeyFrameIntervalDurationKey] = keyFrameSeconds
+            if let outputRate {
+                compression[AVVideoMaxKeyFrameIntervalKey] = max(1, Int((outputRate * keyFrameSeconds).rounded()))
+            }
         }
 
-        var settings: [String: Any] = [
+        var videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.hevc,
-            AVVideoWidthKey: Int(naturalSize.width.rounded()),
-            AVVideoHeightKey: Int(naturalSize.height.rounded()),
+            AVVideoWidthKey: width,
+            AVVideoHeightKey: height,
             AVVideoCompressionPropertiesKey: compression,
         ]
+        if isScaled {
+            videoSettings[AVVideoScalingModeKey] = AVVideoScalingModeResize
+        }
         if let primaries = extensions[kCMFormatDescriptionExtension_ColorPrimaries as String] as? String,
            let transfer,
            let matrix = extensions[kCMFormatDescriptionExtension_YCbCrMatrix as String] as? String {
-            settings[AVVideoColorPropertiesKey] = [
+            videoSettings[AVVideoColorPropertiesKey] = [
                 AVVideoColorPrimariesKey: primaries,
                 AVVideoTransferFunctionKey: transfer,
                 AVVideoYCbCrMatrixKey: matrix,
             ]
-            if !writer.canApply(outputSettings: settings, forMediaType: .video) {
-                settings[AVVideoColorPropertiesKey] = nil
+            if !writer.canApply(outputSettings: videoSettings, forMediaType: .video) {
+                videoSettings[AVVideoColorPropertiesKey] = nil
             }
         }
-        guard writer.canApply(outputSettings: settings, forMediaType: .video) else {
+        guard writer.canApply(outputSettings: videoSettings, forMediaType: .video) else {
             throw Failure.unsupportedSettings
         }
 
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
-        input.expectsMediaDataInRealTime = false
-        input.transform = transform  // rotation flag, like ffmpeg's -noautorotate + copied display matrix
+        // Constant quality: Apple silicon and iPhones have it; without it,
+        // a quality-only setup aims for a bitrate instead.
+        var qualityNote = ""
+        if let quality = settings.quality {
+            var trialCompression = compression
+            trialCompression[AVVideoQualityKey] = quality
+            var trial = videoSettings
+            trial[AVVideoCompressionPropertiesKey] = trialCompression
+            if writer.canApply(outputSettings: trial, forMediaType: .video) {
+                compression = trialCompression
+                videoSettings = trial
+                qualityNote = String(format: ", quality %.2f", quality)
+            } else if settings.bitrate == nil {
+                let rate = outputRate ?? 30
+                let bitrate = Int(Double(width * height) * rate * settings.fallbackBitsPerPixel)
+                compression[AVVideoAverageBitRateKey] = bitrate
+                videoSettings[AVVideoCompressionPropertiesKey] = compression
+                qualityNote = ", no constant-quality mode here: \(bitrate / 1000) kb/s"
+            }
+        }
+
+        // Encoder hints that not every device / OS accepts: each is only
+        // added if the settings stay valid with it.
+        var hints: [(key: String, value: Any, label: String)] = [
+            (kVTCompressionPropertyKey_RealTime as String, false, "not real-time"),
+        ]
+        if settings.powerEfficient {
+            hints.append((kVTCompressionPropertyKey_MaximizePowerEfficiency as String, true, "power-saving"))
+        }
+        if settings.prioritizeSpeed {
+            hints.append((kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality as String, true, "speed over quality"))
+        }
+        if let qp = settings.minFrameQP {
+            hints.append((kVTCompressionPropertyKey_MinAllowedFrameQP as String, qp, "QP ≥ \(qp)"))
+        }
+        #if os(macOS)  // not available on iOS
+        if !settings.adaptiveQP {
+            hints.append((kVTCompressionPropertyKey_SpatialAdaptiveQPLevel as String,
+                          kVTQPModulationLevel_Disable, "no adaptive QP"))
+        }
+        #endif
+        var applied: [String] = []
+        for hint in hints {
+            var trialCompression = compression
+            trialCompression[hint.key] = hint.value
+            var trial = videoSettings
+            trial[AVVideoCompressionPropertiesKey] = trialCompression
+            if writer.canApply(outputSettings: trial, forMediaType: .video) {
+                compression = trialCompression
+                videoSettings = trial
+                applied.append(hint.label)
+            }
+        }
+
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        // Rotation flag, like ffmpeg's -noautorotate + copied display matrix.
+        // Its offset depends on the frame size, so it is redone when scaling.
+        input.transform = isScaled ? fitted(transform, width: width, height: height) : transform
         if timeScale > 0 { input.mediaTimeScale = timeScale }
         try await copyTrackProperties(from: track, to: input)
 
-        return Pair(output: output, input: input, isVideo: true)
+        let maxRate = settings.maxFrameRate.flatMap { cap in frameRate > Float(cap) + 0.05 ? cap : nil }
+        var summary = "Encoder: HEVC \(width)×\(height)\(tenBit ? " 10-bit" : "")"
+        if let maxRate {
+            summary += String(format: ", %.3g → %.3g fps", frameRate, maxRate)
+        }
+        if settings.bitrate != nil { summary += ", lowest bitrate" }
+        summary += qualityNote
+        switch settings.keyFrames {
+        case .every(let seconds): summary += String(format: ", keyframe every %.3g s", seconds)
+        case .single: summary += ", single keyframe"
+        case .encoderChoice: summary += ", keyframes where the encoder wants"
+        }
+        if !applied.isEmpty { summary += ", " + applied.joined(separator: ", ") }
+
+        return (Pair(output: output, input: input, isVideo: true, maxFrameRate: maxRate), summary)
+    }
+
+    private static func evenSize(_ value: Double) -> Int {
+        max(2, Int(value / 2) * 2)
+    }
+
+    /// The same rotation / flip, with the offset that moves the turned frame
+    /// back to (0, 0) for a `width` × `height` frame (e.g. tx = height for a
+    /// 90° turn, as cameras write it).
+    static func fitted(_ transform: CGAffineTransform, width: Int, height: Int) -> CGAffineTransform {
+        let corners = [CGPoint(x: 0, y: 0), CGPoint(x: width, y: 0),
+                       CGPoint(x: 0, y: height), CGPoint(x: width, y: height)]
+        var rotation = transform
+        rotation.tx = 0
+        rotation.ty = 0
+        let turned = corners.map { $0.applying(rotation) }
+        rotation.tx = -(turned.map(\.x).min() ?? 0)
+        rotation.ty = -(turned.map(\.y).min() ?? 0)
+        return rotation
     }
 
     private static func copyTrackProperties(from track: AVAssetTrack, to input: AVAssetWriterInput) async throws {
@@ -320,9 +561,9 @@ nonisolated enum VideoTranscoder {
         if let extendedLanguage { input.extendedLanguageTag = extendedLanguage }
     }
 
-    /// Movie-level tags the container can hold. Afterwards ExifTool (Mac) or
-    /// MetadataCopier (iOS) copies the original's metadata boxes as well;
-    /// this is the baseline, plus the mirrored Apple Keys below.
+    /// Movie-level tags the container can hold. Afterwards MetadataCopier
+    /// copies the original's metadata boxes as well; this is the baseline,
+    /// plus the mirrored Apple Keys below.
     private static func containerMetadata(of asset: AVURLAsset, for fileType: AVFileType) async throws -> [AVMetadataItem] {
         let keySpaces: Set<AVMetadataKeySpace> = fileType == .mov
             ? [.quickTimeMetadata, .quickTimeUserData]

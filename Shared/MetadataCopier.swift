@@ -1,10 +1,9 @@
 //
 //  MetadataCopier.swift
-//  FFmpui
+//  shrk
 //
 //  Copies the original video's metadata boxes, byte for byte, into a file
-//  that AVFoundation just encoded from it. This is the iOS replacement for
-//  the ExifTool step of compress_video.sh (iOS can't run ExifTool):
+//  just encoded from it (by AVFoundation, or ffmpeg on the Mac):
 //
 //    • QuickTime dates: movie (mvhd), track (tkhd) and media (mdhd)
 //      creation / modification times
@@ -16,9 +15,15 @@
 //    • per track: udta / meta of the matching source track
 //    • top-level uuid / meta boxes (MP4 XMP, Sony USMT / PROF …)
 //
+//  It also fits each video track's rotation offset to the track's size:
+//  after scaling, an encoder may keep the original's offset (e.g. "turn 90°,
+//  then shift by 720 pixels" on a frame that is now 360 pixels tall), which
+//  shifts the picture in some players.
+//
 //  Only the moov box (and what follows it) is rewritten, and only when it
 //  comes after all media data, which is how AVAssetWriter lays files out, so
 //  no sample offsets move. Foundation only: it builds on macOS, iOS and Linux.
+//  Used by both apps (on the Mac for every mode).
 //
 
 import Foundation
@@ -133,7 +138,8 @@ nonisolated enum MetadataCopier {
                 let index = usedPerHandler[handler, default: 0]
                 usedPerHandler[handler] = index + 1
                 if let candidates = sourceTracksByHandler[handler], index < candidates.count {
-                    payload += try rebuildTrak(output: output, trak: kid, source: source, sourceTrak: candidates[index])
+                    payload += try rebuildTrak(output: output, trak: kid, source: source, sourceTrak: candidates[index],
+                                               isVideo: handler == "vide", notes: &notes)
                     matchedTracks += 1
                 } else {
                     payload += slice(output, kid)
@@ -168,7 +174,8 @@ nonisolated enum MetadataCopier {
         return makeBox("moov", payload)
     }
 
-    private static func rebuildTrak(output: [UInt8], trak: Box, source: [UInt8], sourceTrak: Box) throws -> [UInt8] {
+    private static func rebuildTrak(output: [UInt8], trak: Box, source: [UInt8], sourceTrak: Box,
+                                    isVideo: Bool, notes: inout [String]) throws -> [UInt8] {
         let outputKids = try children(of: output, box: trak)
         let sourceKids = try children(of: source, box: sourceTrak)
         let sourceUdta = sourceKids.first { $0.type == "udta" }
@@ -179,9 +186,13 @@ nonisolated enum MetadataCopier {
             switch kid.type {
             case "tkhd":
                 var bytes = slice(output, kid)
+                let local = Box(type: kid.type, offset: 0, headerSize: kid.headerSize, size: kid.size)
                 if let sourceTkhd = sourceKids.first(where: { $0.type == "tkhd" }),
                    let dates = readDates(source, sourceTkhd) {
-                    writeDates(&bytes, Box(type: kid.type, offset: 0, headerSize: kid.headerSize, size: kid.size), dates)
+                    writeDates(&bytes, local, dates)
+                }
+                if isVideo, fitRotationOffset(&bytes, local) {
+                    notes.append("rotation offset fitted to the new size")
                 }
                 payload += bytes
             case "mdia":
@@ -226,6 +237,37 @@ nonisolated enum MetadataCopier {
         let start = hdlr.payloadStart + 8
         guard start + 4 <= hdlr.end else { return nil }
         return fourCC(bytes, start)
+    }
+
+    // MARK: - Rotation
+
+    /// tkhd after version/flags and the dates: track ID, reserved, duration,
+    /// reserved (8), layer, alternate group, volume, reserved (2 each), then
+    /// the 3×3 matrix (a b u / c d v / x y w; a b c d x y in 16.16 fixed
+    /// point) and the width and height (16.16).
+    /// The matrix maps (px, py) to (a·px + c·py + x, b·px + d·py + y); the
+    /// right offset puts the turned frame's corner back at (0, 0), e.g.
+    /// x = height for a 90° turn, as cameras write it. Returns true when it
+    /// changed something.
+    private static func fitRotationOffset(_ bytes: inout [UInt8], _ tkhd: Box) -> Bool {
+        let start = tkhd.payloadStart
+        guard start + 4 <= tkhd.end else { return false }
+        let matrix = start + (bytes[start] == 1 ? 36 : 24) + 16
+        guard matrix + 44 <= tkhd.end else { return false }
+        func fixed(_ at: Int) -> Double { Double(Int32(bitPattern: be32(bytes, at))) / 65536 }
+        let a = fixed(matrix), b = fixed(matrix + 4), c = fixed(matrix + 12), d = fixed(matrix + 16)
+        let width = Double(be32(bytes, matrix + 36)) / 65536
+        let height = Double(be32(bytes, matrix + 40)) / 65536
+        guard width > 0, height > 0 else { return false }
+        let corners = [(0.0, 0.0), (width, 0.0), (0.0, height), (width, height)]
+        let x = -(corners.map { a * $0.0 + c * $0.1 }.min() ?? 0)
+        let y = -(corners.map { b * $0.0 + d * $0.1 }.min() ?? 0)
+        let newX = Int32((x * 65536).rounded()), newY = Int32((y * 65536).rounded())
+        let oldX = Int32(bitPattern: be32(bytes, matrix + 24)), oldY = Int32(bitPattern: be32(bytes, matrix + 28))
+        guard newX != oldX || newY != oldY else { return false }
+        putBE32(&bytes, matrix + 24, UInt32(bitPattern: newX))
+        putBE32(&bytes, matrix + 28, UInt32(bitPattern: newY))
+        return true
     }
 
     // MARK: - Dates

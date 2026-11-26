@@ -1,0 +1,149 @@
+name: Tune settings
+
+# Compares candidate encoder settings on the test clips:
+#   Size mode by total bytes, Size + Quality by bytes at VMAF 95
+#   (Tests/tune.sh; the winners go into compress_video.sh), and
+#   Size + Speed variations of the shared hardware encoder
+#   (Tests/run_transcoder.sh; GitHub's M1 runners have a paravirtualized
+#   hardware HEVC encoder).
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - Tests/tune.sh
+      - Tests/tune_speed_quality.sh
+      - Tests/tune/**
+      - Tests/run_transcoder.sh
+      - Tests/TranscoderHarness/**
+      - Shared/VideoTranscoder.swift
+      - .github/workflows/tune.yml
+
+# Sweeps are slow: a newer push waits for the running one instead of
+# cancelling it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+# bash with pipefail, so "… | tee" steps fail when the tests do.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # What to run: everything when started by hand; on a push, only the parts
+  # whose files changed (Size: Tests/tune/size.txt; Size + Quality:
+  # Tests/tune/quality.txt; both: Tests/tune.sh; Size + Speed: the shared
+  # encoder or its harness).
+  variants:
+    runs-on: ubuntu-latest
+    outputs:
+      quality: ${{ steps.list.outputs.quality }}
+      size: ${{ steps.list.outputs.size }}
+      x265: ${{ steps.list.outputs.x265 }}
+      speed: ${{ steps.list.outputs.speed }}
+      speedq: ${{ steps.list.outputs.speedq }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: list
+        run: |
+          echo "quality=$(Tests/tune.sh quality-variants | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
+          before="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "push" ] && git cat-file -e "$before^{commit}" 2>/dev/null; then
+            changed=$(git diff --name-only "$before" "${{ github.sha }}")
+          else
+            changed=$'Tests/tune.sh\nTests/run_transcoder.sh\nTests/tune_speed_quality.sh'
+          fi
+          echo "$changed"
+          if grep -qxE 'Tests/tune.sh|Tests/tune/size.txt' <<< "$changed"; then echo "size=true"; else echo "size=false"; fi >> "$GITHUB_OUTPUT"
+          if grep -qxE 'Tests/tune.sh|Tests/tune/quality.txt' <<< "$changed"; then echo "x265=true"; else echo "x265=false"; fi >> "$GITHUB_OUTPUT"
+          if grep -qE '^(Tests/run_transcoder.sh|Tests/TranscoderHarness/|Shared/VideoTranscoder.swift)' <<< "$changed"; then
+            echo "speed=true"; else echo "speed=false"; fi >> "$GITHUB_OUTPUT"
+          if grep -qx 'Tests/tune_speed_quality.sh' <<< "$changed"; then
+            echo "speedq=true"; else echo "speedq=false"; fi >> "$GITHUB_OUTPUT"
+
+  size:
+    name: Size mode
+    needs: variants
+    if: needs.variants.outputs.size == 'true'
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+      - run: brew install ffmpeg exiftool
+      - run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"
+      - run: Tests/tune.sh size "$RUNNER_TEMP/fixtures" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  quality:
+    name: Quality · ${{ matrix.variant }}
+    needs: variants
+    if: needs.variants.outputs.x265 == 'true'
+    runs-on: macos-26
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(needs.variants.outputs.quality) }}
+    steps:
+      - uses: actions/checkout@v6
+      - run: brew install ffmpeg exiftool
+      - run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"
+      - name: Bytes at VMAF 95
+        run: |
+          echo "| Variant | Preset | x265 | Bytes at VMAF 95 | Per clip | Seconds |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          Tests/tune.sh quality "$RUNNER_TEMP/fixtures" "${{ matrix.variant }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  speed:
+    name: Size + Speed · ${{ matrix.fixture }}
+    needs: variants
+    if: needs.variants.outputs.speed == 'true'
+    runs-on: macos-26
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        fixture: [IMG_6758.mov, hlg60.mov, long63.mov]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Select Xcode
+        run: .github/scripts/select-xcode.sh
+      - run: brew install ffmpeg exiftool
+      - run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"
+      # 63 s without cuts (the sample forward, then backward, 6 times), long
+      # enough for keyframe intervals to matter.
+      - name: Long test clip
+        if: matrix.fixture == 'long63.mov'
+        run: |
+          ffmpeg -nostdin -loglevel error -y -noautorotate -i Tests/Fixtures/IMG_6758.mov \
+            -filter_complex "[0:v]split[a][b];[b]reverse[r];[a][r]concat=n=2:v=1:a=0[v]" -map "[v]" \
+            -c:v libx264 -preset fast -crf 16 "$RUNNER_TEMP/pingpong.mp4"
+          ffmpeg -nostdin -loglevel error -y -stream_loop 5 -i "$RUNNER_TEMP/pingpong.mp4" -map 0:v \
+            -c:v libx264 -preset fast -crf 16 "$RUNNER_TEMP/fixtures/long63.mov"
+          ffprobe -v error -show_entries format=duration -of csv=p=0 "$RUNNER_TEMP/fixtures/long63.mov"
+      - name: Variations
+        run: |
+          {
+            echo "### Size + Speed · ${{ matrix.fixture }}"
+            echo '```'
+            Tests/run_transcoder.sh "$RUNNER_TEMP/fixtures/${{ matrix.fixture }}"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  speed-quality:
+    name: Speed + Quality levels
+    needs: variants
+    if: needs.variants.outputs.speedq == 'true'
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+      - name: Select Xcode
+        run: .github/scripts/select-xcode.sh
+      - run: brew install ffmpeg exiftool
+      - run: Tests/run_transcoder.sh --build "$RUNNER_TEMP/h"
+      - run: Tests/make_fixtures.sh "$RUNNER_TEMP/fixtures"
+      - name: Encoder setting per VMAF target
+        run: Tests/tune_speed_quality.sh "$RUNNER_TEMP/h" "$RUNNER_TEMP/fixtures" | tee -a "$GITHUB_STEP_SUMMARY"

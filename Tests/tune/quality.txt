@@ -1,0 +1,11 @@
+# Size + Quality candidates: name|x265 preset|x265 params (10-bit, CRF searched).
+# Tests/tune.sh quality interpolates the video bytes needed for VMAF 95.
+# Round 1 (bytes at VMAF 95 on the 3 clips, slower unless noted): aq-mode 4
+# 2,342,586; aq-mode 2 2,476,544; aq-mode 3 + no SAO 2,559,483; aq-mode 3 +
+# psy-rd 1 2,578,079; veryslow aq-mode 3 2,663,685; aq-mode 3 2,687,569; slow
+# aq-mode 3 2,734,411. Round 2: aq-mode 4 + no SAO + psy-rd 1 2,254,572 (now
+# the app's); aq-mode 4 + psy-rd 1 2,264,453; veryslow aq-mode 4 2,325,149;
+# aq-mode 4 + no SAO 2,327,889.
+app|slower|aq-mode=4:sao=0:psy-rd=1.0
+slower-aq4|slower|aq-mode=4
+veryslow-app|veryslow|aq-mode=4:sao=0:psy-rd=1.0

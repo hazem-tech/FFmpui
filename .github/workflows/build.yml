@@ -1,57 +1,62 @@
 name: Build
 
+# Builds the Mac and iOS apps and fails on any compiler or project warning,
+# so deprecations and other warnings can't pile up.
+
 on:
   push:
   pull_request:
   workflow_dispatch:
 
+# A newer push to the same branch replaces a run that is still going.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
     runs-on: macos-26
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
-      - name: Select newest Xcode
-        run: |
-          ls -d /Applications/Xcode*.app
-          XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)
-          sudo xcode-select -s "$XCODE"
-          xcodebuild -version
+      - name: Select Xcode
+        run: .github/scripts/select-xcode.sh
 
-      # GitHub's runners only have Xcode 26 so far, but the project was saved by
-      # Xcode 27. Downgrade the project format in the CI checkout only.
-      - name: Make project readable by this Xcode
-        run: |
-          if ! xcodebuild -version | grep -q "Xcode 27"; then
-            sed -i '' -e 's/objectVersion = 110;/objectVersion = 77;/' \
-                      -e 's/MACOSX_DEPLOYMENT_TARGET = 27.0;/MACOSX_DEPLOYMENT_TARGET = 26.0;/' \
-                      -e '/validationLevel = /d' \
-                      FFmpui.xcodeproj/project.pbxproj
-          fi
-
-      - name: Build app
+      - name: Build Mac app
         run: |
           set -o pipefail
-          xcodebuild -project FFmpui.xcodeproj -target FFmpui -configuration Debug \
+          xcodebuild -project shrk.xcodeproj -target shrk -configuration Debug \
             CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=NO build 2>&1 | tee build.log
-          echo "---- warnings ----"
-          grep -E "(warning|error):" build.log | sort -u || echo "No warnings or errors"
 
       - name: Build iOS app (simulator)
         run: |
           set -o pipefail
-          xcodebuild -project FFmpui.xcodeproj -target FFmpui-iOS -sdk iphonesimulator -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build-ios.log
-          echo "---- warnings ----"
-          grep -E "(warning|error):" build-ios.log | sort -u || echo "No warnings or errors"
-          test -d build/Debug-iphonesimulator/FFmpui-iOS.app
+          xcodebuild -project shrk.xcodeproj -target shrk-iOS -sdk iphonesimulator -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=NO build 2>&1 | tee build-ios.log
+          test -d build/Debug-iphonesimulator/shrk-iOS.app
+
+      # Xcode's App Intents step logs "Metadata extraction skipped" as a
+      # warning for every app without App Intents; that one is just a note.
+      - name: No warnings
+        run: |
+          if grep -hE "(warning|error):" build.log build-ios.log \
+               | grep -v "appintentsmetadataprocessor.*Metadata extraction skipped" \
+               | sort -u | tee warnings.txt | grep -q .; then
+            {
+              echo "### Build warnings"
+              echo '```'
+              cat warnings.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            while IFS= read -r line; do echo "::error::$line"; done < warnings.txt
+            exit 1
+          fi
+          echo "No warnings"
 
       - name: Check script bundled
-        run: |
-          ls build/Debug/FFmpui.app/Contents/Resources/
-          test -f build/Debug/FFmpui.app/Contents/Resources/compress_video.sh
-
-      - name: ShellCheck
-        run: |
-          brew install shellcheck
-          shellcheck FFmpui/compress_video.sh
+        run: test -f build/Debug/shrk.app/Contents/Resources/compress_video.sh

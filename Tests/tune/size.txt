@@ -1,0 +1,17 @@
+# Size mode candidates: name|x265 preset|x265 params (always with -crf 51).
+# Tests/tune.sh size adds up the video bytes over the test clips at each scale.
+# Video bytes over the 4 clips at 1x / 0.5x / 0.25x on x265 4.3: with
+# min-cu-size=32 32,630 / 58,282 / 11,786; without 33,007 / 19,838 / 12,608
+# (now the app's); plain -crf 51 111,411 / 47,353 / 25,168. (Those runs used a
+# single keyframe; the app now puts one every 10 s, as every line here does.)
+app|veryfast|qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1
+app-min-cu-32|veryfast|qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1:min-cu-size=32
+no-merange|veryfast|qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1
+no-rskip|veryfast|qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:max-merge=1
+no-max-merge|veryfast|qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2
+no-max-tu|veryfast|qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1
+no-umh|veryfast|qpmin=51:aq-mode=0:sao=0:merange=200:max-tu-size=4:rc-lookahead=5:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1
+no-lookahead|veryfast|qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:max-tu-size=4:cbqpoffs=12:crqpoffs=12:rskip=2:max-merge=1
+no-chroma-offset|veryfast|qpmin=51:aq-mode=0:sao=0:me=umh:subme=0:merange=200:max-tu-size=4:rc-lookahead=5:rskip=2:max-merge=1
+simple|veryfast|qpmin=51:aq-mode=0:sao=0:max-tu-size=4:cbqpoffs=12:crqpoffs=12
+plain-crf51|medium|log-level=error
